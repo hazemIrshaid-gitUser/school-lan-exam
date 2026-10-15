@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>الامتحان الإلكتروني</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#eef3f6;
+  --surface:#ffffff;
+  --ink:#192d38;
+  --muted:#526875;
+  --primary:#14566b;
+  --primary-deep:#0e4355;
+  --primary-soft:#e8f3f6;
+  --ok:#17643a;
+  --bad:#9f2824;
+  --warning-bg:#fff7e5;
+  --warning-border:#e8cd7f;
+  --line:#d2dfe5;
+  --focus:#ffbf47;
+  --bar-height:68px;
+  --radius:16px;
+  --soft-shadow:0 3px 12px rgba(20,86,107,.07);
+}
+*{box-sizing:border-box}
+html{min-height:100%;scroll-padding-top:calc(var(--bar-height) + 12px)}
+body{
+  min-height:100vh;
+  margin:0;
+  overflow-x:hidden;
+  background:linear-gradient(180deg,#f5f8fa 0,#eef3f6 300px);
+  color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",Tahoma,"Noto Sans Arabic",Arial,sans-serif;
+  line-height:1.7;
+  -webkit-text-size-adjust:100%;
+}
+button,input,select,textarea{font:inherit;font-size:16px;color:inherit}
+button,select,input{min-width:0}
+button{cursor:pointer}
+:focus{outline:3px solid var(--focus);outline-offset:3px}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.hide{display:none !important}
+.lock,.lock *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+
+.bar{
+  position:sticky;top:0;z-index:10;
+  display:flex;align-items:center;justify-content:space-between;
+  width:100%;height:var(--bar-height);min-height:var(--bar-height);
+  padding:0 18px;background:var(--primary);color:#fff;
+  border-bottom:1px solid rgba(255,255,255,.15);
+}
+#who{display:block;flex:1 1 auto;min-width:0;max-width:68%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;font-weight:750}
+.bar>span:last-child{display:flex;align-items:center;flex:0 0 auto;font-size:13px;font-weight:700;white-space:nowrap}
+#clock{display:inline-block;min-width:5ch;margin-inline-start:8px;padding:4px 10px;border-radius:9px;background:rgba(0,0,0,.2);direction:ltr;text-align:center;font-size:clamp(21px,5.5vw,26px);font-variant-numeric:tabular-nums;line-height:1.15;letter-spacing:.03em}
+.sticky-notices{position:sticky;top:var(--bar-height);z-index:9;display:grid;grid-template-columns:minmax(0,1fr)}
+.notice,.away{position:static;z-index:auto;min-width:0;overflow-wrap:anywhere}
+.notice{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 16px;background:#174f62;color:#fff;
+  border-bottom:3px solid #e2a928;font-weight:700;
+}
+.notice>span{flex:1 1 auto;min-width:0}
+.notice button{
+  flex:0 0 auto;width:auto;min-height:44px;margin-inline-start:12px;
+  padding:7px 14px;border:1px solid rgba(20,86,107,.16);border-radius:9px;
+  background:#fff;color:var(--primary);font:inherit;font-size:15px;font-weight:700;
+}
+.away{display:flex;align-items:center;justify-content:center;min-height:48px;padding:9px 14px;background:#9f2824;color:#fff;text-align:center;font-weight:750}
+.wrap{width:100%;max-width:790px;margin:0 auto;padding:22px 16px calc(40px + env(safe-area-inset-bottom))}
+.card{
+  min-width:0;margin-bottom:14px;padding:clamp(17px,4.5vw,24px);
+  border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);
+}
+.login-card{max-width:640px;margin:clamp(18px,5vh,48px) auto;padding:clamp(20px,6vw,32px);border-top:4px solid var(--primary);box-shadow:var(--soft-shadow)}
+.login-brand{display:flex;align-items:center;margin-bottom:14px;color:var(--primary)}
+.brand-icon{display:inline-grid;place-items:center;width:38px;height:38px;margin-inline-end:10px;border-radius:12px;background:var(--primary-soft);color:var(--primary);font-size:21px;font-weight:800}
+.eyebrow{color:var(--primary);font-size:13px;font-weight:800;letter-spacing:.02em}
+.login-head h1{margin:0;font-size:clamp(23px,6vw,32px);font-weight:800;line-height:1.4;overflow-wrap:anywhere}
+#meta{margin-top:6px;color:var(--muted);font-size:15px;font-weight:650}
+.login-helper{margin:18px 0 20px;padding:12px 14px;border-radius:11px;background:var(--primary-soft);color:#294b59;font-size:14px;line-height:1.65;overflow-wrap:anywhere}
+.field-grid{display:grid;grid-template-columns:minmax(0,1fr);grid-gap:13px}
+.field{min-width:0}
+.field label{display:block;margin:0 0 6px;color:var(--ink);font-size:15px;font-weight:750}
+.field select,.field input{
+  display:block;width:100%;min-height:50px;padding:11px 13px;
+  border:1px solid #b9c9d1;border-radius:11px;background:#fff;
+  font-family:inherit;font-size:16px;line-height:1.4;
+}
+.field select:disabled{background:#f1f4f5;color:#667780;opacity:1}
+.field input.code{direction:ltr;text-align:center;letter-spacing:.25em;font-size:18px}
+#codeLbl{margin-top:2px}
+.warn{margin-top:12px;padding:11px 13px;border:1px solid var(--warning-border);border-radius:11px;background:var(--warning-bg);color:#604914;font-size:14px;line-height:1.65;overflow-wrap:anywhere}
+button.pri{
+  display:flex;align-items:center;justify-content:center;width:100%;min-height:54px;
+  margin-top:20px;padding:13px 16px;border:1px solid var(--primary);border-radius:12px;
+  background:var(--primary);color:#fff;font-family:inherit;font-size:16px;font-weight:800;
+}
+button.pri:hover:not(:disabled){background:var(--primary-deep);border-color:var(--primary-deep)}
+button.pri:disabled{border-color:#d0d9de;background:#e7ecef;color:#687780;opacity:1;cursor:not-allowed}
+.button-icon{display:inline-grid;place-items:center;width:24px;height:24px;margin-inline-start:9px;border-radius:50%;background:rgba(255,255,255,.16);font-size:16px;line-height:1}
+button.pri:disabled .button-icon{background:rgba(25,45,56,.08)}
+.exam-note{margin:4px 2px 16px}
+.exam-note .eyebrow{display:block;margin-bottom:3px}
+.exam-note .mut{margin:0;color:var(--muted);font-size:14px}
+#qs{display:grid;grid-template-columns:minmax(0,1fr);grid-gap:13px;min-width:0}
+#qs .card{margin:0;padding:clamp(16px,4vw,23px);border-radius:14px;background:var(--surface)}
+.q{margin:0 0 14px;color:var(--ink);font-size:clamp(17px,4.5vw,20px);font-weight:750;line-height:1.8;overflow-wrap:anywhere;word-break:normal}
+.mk{display:inline-block;margin-inline-start:8px;padding:2px 9px;border-radius:999px;background:#edf2f4;color:#536773;font-size:12px;font-weight:650;white-space:nowrap;vertical-align:middle}
+.opt{
+  display:flex;align-items:flex-start;min-width:0;min-height:54px;
+  margin:8px 0 0;padding:13px 14px;border:1px solid #cbd8de;border-radius:12px;
+  background:#fff;cursor:pointer;font-size:16px;font-weight:500;line-height:1.65;
+  -webkit-tap-highlight-color:transparent;
+}
+.opt input[type=radio]{
+  display:block;flex:0 0 22px;width:22px;height:22px;min-width:22px;min-height:22px;
+  margin:1px 0 0;margin-inline-end:12px;padding:0;border:2px solid #71838d;border-radius:50%;
+  background:#fff;-webkit-appearance:none;appearance:none;cursor:pointer;
+}
+.opt input[type=radio]:checked{border-color:var(--primary);background:var(--primary);box-shadow:inset 0 0 0 4px #fff}
+.opt input[type=radio]:focus{outline:3px solid var(--focus);outline-offset:3px}
+.opt input[type=radio]:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.opt span{display:block;flex:1 1 auto;min-width:0;text-align:start;overflow-wrap:anywhere;word-break:normal}
+.opt input:checked+span{color:var(--primary);font-weight:750}
+.opt input:checked+span:before{content:"✓";display:inline-grid;place-items:center;width:20px;height:20px;margin-inline-end:8px;border-radius:50%;background:var(--primary);color:#fff;font-size:12px;font-weight:800;line-height:1;vertical-align:middle}
+.opt:has(input:checked){border-color:var(--primary);background:var(--primary-soft);box-shadow:inset 0 0 0 1px var(--primary)}
+.qimg{display:block;width:auto;max-width:100%;height:auto;max-height:340px;margin:11px auto;border:1px solid #d9e2e6;border-radius:10px;background:#fff;padding:4px;object-fit:contain;-webkit-user-drag:none}
+.opt .qimg{max-height:170px;margin:6px auto}
+#submit{margin-top:18px}
+#submit.submit-later,.submit-hint.submit-later{display:none}
+.submit-hint{margin:14px 2px 0;color:var(--muted);font-size:14px;text-align:center}
+.res{text-align:center}
+.res h2{margin:0 0 12px;color:var(--ink);font-size:22px;font-weight:800}
+.info{width:100%;margin:12px 0 8px;border-collapse:collapse;table-layout:fixed;font-size:clamp(15px,4vw,18px)}
+.info th,.info td{padding:10px;border:1px solid var(--line);text-align:right;vertical-align:middle;overflow-wrap:anywhere;word-break:normal}
+.info th{width:35%;background:#edf4f6;font-weight:750}
+.info td{background:#fff}
+.big{color:var(--primary);font-size:clamp(28px,8vw,38px);font-weight:850;white-space:nowrap}
+.info .big{font-size:clamp(25px,7vw,31px)}
+#status{min-height:44px;margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#f6f8f9;color:var(--muted);font-size:14px;text-align:start;overflow-wrap:anywhere}
+.rv{margin:9px 0;padding:12px;border:1px solid var(--line);border-inline-start:4px solid #a9c4cf;border-radius:11px;background:#fbfcfd;text-align:start;font-size:15px;overflow-wrap:anywhere}
+.rv .no{margin-top:7px;color:var(--bad);font-weight:750}
+.rv .ok{margin-top:4px;color:var(--ok);font-weight:750}
+#review>h2{margin-top:18px;font-size:18px}
+.mut{color:var(--muted);font-size:14px}
+@media(min-width:600px){
+  .wrap{padding:28px 20px calc(44px + env(safe-area-inset-bottom))}
+  .field-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-gap:14px}
+  .field:first-child{grid-column:1/-1}
+}
+@media(max-width:360px){
+  #bar{padding-inline:12px}
+  #who{max-width:60%}
+  .wrap{padding-inline:12px}
+  .login-card{padding:19px}
+  .notice{padding-inline:12px}
+  .notice button{margin-inline-start:8px;padding-inline:10px}
+  .opt{padding:12px}
+  .opt input[type=radio]{margin-inline-end:9px}
+  .info th,.info td{padding:8px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto !important;transition:none !important}
+}
+:root{--login-pad:clamp(19px,6vw,32px)}
+body{background:radial-gradient(ellipse at 50% -180px,#d8e8ed 0,transparent 560px),linear-gradient(180deg,#f5f8fa 0,#eaf1f4 420px)}
+.login-card{padding:0;overflow:hidden;border:1px solid #c9d9df;border-radius:22px;box-shadow:0 12px 28px rgba(16,62,80,.11)}
+.login-brand{margin:0;padding:22px var(--login-pad) 10px;background:#103e50;color:#fff}
+.login-brand .brand-icon{background:#f2bd55;color:#173d4a;border-radius:13px}
+.login-brand .eyebrow{color:#f5d992}
+.login-head{position:relative;isolation:isolate;overflow:hidden;padding:0 var(--login-pad) 26px;border-radius:0 0 20px 20px;background:linear-gradient(132deg,#103e50 0%,#14566b 58%,#24778a 100%);color:#fff}
+.login-head:after{content:"";position:absolute;z-index:-1;top:8px;inset-inline-start:-52px;width:156px;height:156px;border:1px solid rgba(255,255,255,.18);border-radius:50%;box-shadow:0 0 0 18px rgba(255,255,255,.035),0 0 0 38px rgba(255,255,255,.025)}
+.login-head h1{position:relative;z-index:1;color:#fff;font-size:clamp(24px,6vw,34px);line-height:1.35}
+.login-head #meta{position:relative;z-index:1;margin-top:9px;color:rgba(255,255,255,.84);font-weight:600}
+.login-helper{margin:19px var(--login-pad) 20px;border-inline-start:4px solid #d9a231;background:#fff8e9;color:#55451f}
+.field-grid{margin-inline:var(--login-pad)}
+.field select,.field input{border-color:#c4d2d8;background:#fbfcfd}
+.field select:focus,.field input:focus{border-color:var(--primary);background:#fff}
+.login-card .warn{margin-inline:var(--login-pad)}
+.login-card #start{width:calc(100% - var(--login-pad) - var(--login-pad));min-height:58px;margin:22px auto 26px;border-radius:14px;background:linear-gradient(115deg,#103e50,#17677b);box-shadow:0 5px 12px rgba(20,86,107,.16)}
+.login-card #start:hover:not(:disabled){background:linear-gradient(115deg,#0d3443,#14566b)}
+.login-card #start:disabled{border-color:#d2dade;background:#e5eaed;color:#687780;box-shadow:none}
+.login-card #start .button-icon{background:#f2bd55;color:#173d4a}
+.exam-note{position:relative;isolation:isolate;overflow:hidden;margin:2px 0 17px;padding:19px 21px;border:1px solid #174e61;border-radius:16px;background:linear-gradient(125deg,#103e50,#14566b 68%,#24778a);color:#fff}
+.exam-note:after{content:"";position:absolute;z-index:-1;top:-50px;inset-inline-start:-28px;width:150px;height:150px;border:1px solid rgba(255,255,255,.17);border-radius:50%;box-shadow:0 0 0 17px rgba(255,255,255,.035)}
+.exam-note .eyebrow{color:#f5d992;font-size:14px}
+.exam-note .mut{position:relative;z-index:1;color:rgba(255,255,255,.86)}
+#qs .card{border-color:#d3e0e5;border-inline-start:5px solid #14566b;border-radius:13px}
+#qs .card:nth-child(even){border-inline-start-color:#d1a03a}
+.q{padding:10px 13px;border-inline-start:4px solid #78a9b7;border-radius:10px;background:#f0f6f8}
+#qs .card:nth-child(even) .q{border-inline-start-color:#d1a03a;background:#fbf7ed}
+.opt{min-height:58px;border-color:#c7d6dc;background:#fbfcfd}
+.opt:hover{border-color:#8aaab5;background:#f3f8fa}
+.opt:has(input:checked){border-color:var(--primary);background:#dceef2;box-shadow:inset 0 0 0 1px var(--primary)}
+.res{padding:0;overflow:hidden;border-color:#c9d9df;border-radius:20px;box-shadow:0 10px 26px rgba(16,62,80,.09)}
+.res h2{margin:0;padding:20px var(--login-pad);background:linear-gradient(125deg,#103e50,#14566b 68%,#24778a);color:#fff;font-size:22px}
+.res h2:before{content:"✓";display:inline-grid;place-items:center;width:31px;height:31px;margin-inline-end:10px;border-radius:50%;background:#f2bd55;color:#173d4a;font-size:17px;vertical-align:middle}
+#s-done #score{padding:16px var(--login-pad) 0}
+#s-done .info{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+#s-done .info th{background:#e7f0f3}
+#s-done .big{color:#14566b}
+#s-done #status{margin:12px var(--login-pad) 16px}
+#s-done #review{margin-inline:var(--login-pad);padding-bottom:22px}
+.rv{background:#f8fbfc}
+@media(min-width:600px){
+  .login-card{max-width:660px}
+  .login-brand{padding-top:26px}
+  .login-head{padding-bottom:30px}
+  .exam-note{padding:22px 25px}
+  #qs .card{padding:23px 25px}
+}
+@media(max-width:360px){
+  .login-brand{padding-top:19px}
+  .exam-note{padding:16px}
+  .res h2{font-size:20px}
+}
+.wrap{max-width:1180px}
+.res{max-width:760px;margin-inline:auto}
+#s-exam{min-width:0}
+.mobile-map-actions{display:none}
+.exam-layout{display:flex;align-items:flex-start;min-width:0}
+.question-map{
+  position:sticky;top:calc(var(--bar-height) + 14px);align-self:flex-start;
+  flex:0 0 244px;max-height:calc(100vh - var(--bar-height) - 28px);
+  overflow-y:auto;padding:16px;border:1px solid #cbdbe1;border-radius:16px;
+  background:#fff;box-shadow:0 5px 16px rgba(16,62,80,.06)
+}
+.exam-main{flex:1 1 auto;min-width:0;margin-inline-start:18px}
+.question-map-heading h2{margin:0;color:var(--ink);font-size:17px}
+.question-map-heading .mut{margin:2px 0 12px;font-size:13px}
+.map-counts{display:flex;justify-content:space-between;color:var(--muted);font-size:13px}
+.map-counts strong{color:var(--ink);font-size:15px}
+.map-progress{height:8px;margin:10px 0 13px;overflow:hidden;border-radius:99px;background:#f6e7e5}
+.map-progress>span{display:block;width:0;height:100%;border-radius:inherit;background:#247447;transition:width .16s ease}
+.question-map-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-gap:6px;max-height:calc(100vh - 300px);overflow-y:auto;padding:2px}
+.question-map-item{position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-width:0;min-height:42px;padding:4px 2px;border:1px solid #d6e0e4;border-radius:9px;background:#f7fafb;color:var(--ink);font-size:14px;font-weight:750}
+.question-map-item.is-answered{border-color:#a8d1b5;background:#edf7f0;color:#185a34}
+.question-map-item.is-unanswered{border-color:#e2b4b0;background:#fff2f0;color:#8e2721}
+.question-map-item.is-current{outline:2px solid #d29b2e;outline-offset:1px;z-index:1}
+.map-item-status{position:absolute;top:3px;inset-inline-end:3px;display:grid;place-items:center;width:14px;height:14px;border:1px solid #a32b25;border-radius:50%;background:#fff;color:#a32b25;font-size:10px;line-height:1}
+.question-map-item.is-answered .map-item-status{border-color:#247447;background:#247447;color:#fff}
+.question-map-item.is-answered .map-item-status:before{content:"✓"}
+.question-map-item.is-unanswered .map-item-status:before{content:"!"}
+.map-legend{display:grid;grid-template-columns:minmax(0,1fr);grid-gap:6px;margin-top:13px;color:var(--muted);font-size:12px}
+.map-legend>span{display:flex;align-items:center}
+.legend-dot{display:inline-grid;place-items:center;flex:0 0 19px;width:19px;height:19px;margin-inline-end:7px;border:1px solid;border-radius:50%;font-size:11px;font-style:normal;font-weight:800;line-height:1}
+.legend-dot.answered{border-color:#247447;background:#edf7f0;color:#185a34}
+.legend-dot.unanswered{border-color:#a32b25;background:#fff2f0;color:#8e2721}
+.map-close{display:none}
+.current-question-info{display:flex;align-items:center;justify-content:space-between;margin:0 0 9px}
+.current-question-count{padding:5px 11px;border-radius:999px;background:#e4f0f3;color:#174f62;font-size:13px;font-weight:800}
+.current-question-state{padding:4px 10px;border:1px solid #e2b4b0;border-radius:999px;background:#fff2f0;color:#8e2721;font-size:12px;font-weight:700}
+.current-question-state.is-answered{border-color:#a8d1b5;background:#edf7f0;color:#185a34}
+#qs .card.question-hidden{display:none !important}
+#qs .card{scroll-margin-top:calc(var(--bar-height) + 14px)}
+.question-pager{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;grid-gap:8px;margin-top:12px}
+.question-pager-btn{width:100%;min-height:48px;padding:8px;border:1px solid #b9cbd2;border-radius:11px;background:#fff;color:var(--primary);font-size:14px;font-weight:750}
+.question-pager-btn:disabled{border-color:#d9e0e3;background:#f0f3f4;color:#7a858a;cursor:not-allowed;opacity:1}
+.question-pager-count{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+@media(max-width:720px){
+  .wrap{max-width:790px}
+  .mobile-map-actions{display:block;margin:0 0 12px}
+  .question-map-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:50px;padding:9px 13px;border:1px solid #cbdbe1;border-inline-start:4px solid var(--primary);border-radius:12px;background:#fff;color:var(--ink);font-size:15px;font-weight:750}
+  .map-toggle-count{margin-inline-start:auto;padding:3px 9px;border-radius:999px;background:#edf4f6;color:var(--primary);font-size:13px;font-variant-numeric:tabular-nums}
+  .map-toggle-arrow{margin-inline-start:10px;color:var(--primary);font-size:18px}
+  .exam-layout{display:block}
+  .exam-main{margin:0}
+  .question-map{
+    position:fixed;z-index:20;top:calc(var(--bar-height) + 8px);bottom:0;inset-inline-start:0;
+    width:min(86vw,340px);max-height:calc(100vh - var(--bar-height) - 8px);
+    border-radius:18px 0 0 18px;box-shadow:0 10px 28px rgba(8,29,38,.24);
+    transform:translateX(105%);visibility:hidden;transition:transform .18s ease,visibility .18s ease
+  }
+  #s-exam.map-open .question-map{transform:translateX(0);visibility:visible}
+  .question-map-backdrop{display:none;position:fixed;z-index:19;top:var(--bar-height);right:0;bottom:0;left:0;background:rgba(13,34,43,.48);touch-action:none}
+  #s-exam.map-open .question-map-backdrop{display:block}
+  .map-close{display:block;width:100%;min-height:46px;margin-top:14px;padding:8px 12px;border:1px solid #cbdbe1;border-radius:10px;background:#f3f7f8;color:var(--primary);font-size:14px;font-weight:750}
+}
+@media(prefers-reduced-motion:reduce){.map-progress>span,.question-map{transition:none !important}}
+</style>
+</head>
+<body>
+<div id="bar" class="bar hide"><span id="who"></span><span>الوقت: <span id="clock">--:--</span></span></div>
+<div class="sticky-notices" aria-live="polite">
+  <div id="notice" class="notice hide"><span id="noticeText"></span><button type="button" onclick="this.parentNode.classList.add('hide')">حسناً</button></div>
+  <div id="away" class="away hide">⚠ تم تسجيل خروجك من صفحة الامتحان وسيظهر ذلك للمعلم</div>
+</div>
+<div class="wrap">
+  <div id="s-login" class="card login-card">
+    <div class="login-brand"><span class="brand-icon" aria-hidden="true">✓</span><span class="eyebrow">الامتحان الإلكتروني</span></div>
+    <div class="login-head">
+      <h1 id="title"></h1>
+      <div class="mut" id="meta"></div>
+    </div>
+    <p class="login-helper">اختر الصف والشعبة واسمك، ثم أدخل رمز الدخول إذا طلبه المعلم.</p>
+    <div class="field-grid">
+      <div class="field"><label for="g">الصف</label><select id="g"></select></div>
+      <div class="field"><label for="sec">الشعبة</label><select id="sec" disabled></select></div>
+      <div class="field"><label for="nm">الاسم</label><select id="nm" disabled></select></div>
+      <div class="field code-field"><label id="codeLbl" class="hide" for="code">رمز الدخول (من المعلم)</label><input id="code" class="code hide" inputmode="numeric" autocomplete="off" maxlength="12"></div>
+    </div>
+    <div id="blocked" class="warn hide">تم تسليم الامتحان من هذا الجهاز مسبقاً لهذا الطالب.</div>
+    <div id="claimmsg" class="warn hide">هذا الاسم بدأ الامتحان من جهاز آخر. إذا كان اسمك، أبلغ المعلم.</div>
+    <button class="pri" id="start" disabled><span>ابدأ الامتحان</span><span class="button-icon" aria-hidden="true">←</span></button>
+  </div>
+
+  <div id="s-exam" class="hide">
+    <div class="exam-note"><span class="eyebrow">ورقة الامتحان</span><p class="mut">سؤال في كل صفحة: تنقّل بالزرّين «السؤال التالي» و«السؤال السابق» أو من خريطة الأسئلة، ثم سلّم من السؤال الأخير.</p></div>
+    <div class="mobile-map-actions"><button class="question-map-toggle" type="button" aria-expanded="false"><span>خريطة الأسئلة</span><span class="map-toggle-count" aria-live="polite">مجاب 0 · باقي 0</span><span class="map-toggle-arrow" aria-hidden="true">⌄</span></button></div>
+    <div class="exam-layout">
+      <aside class="question-map" aria-label="خريطة الأسئلة">
+        <div class="question-map-heading"><h2>خريطة الأسئلة</h2><p class="mut">اختر رقماً للانتقال إليه</p></div>
+        <div class="map-counts" aria-live="polite"><span><strong class="map-answered-count">0</strong> مجاب</span><span><strong class="map-unanswered-count">0</strong> غير مجاب</span></div>
+        <div class="map-progress" role="progressbar" aria-label="نسبة الإجابة" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span></span></div>
+        <div class="question-map-grid"></div>
+        <div class="map-legend"><span><i class="legend-dot answered" aria-hidden="true">✓</i> تمت الإجابة</span><span><i class="legend-dot unanswered" aria-hidden="true">○</i> لم تتم الإجابة</span></div>
+        <button class="map-close" type="button">إغلاق اللوحة</button>
+      </aside>
+      <div class="question-map-backdrop" aria-hidden="true"></div>
+      <div class="exam-main">
+        <div class="current-question-info"><span class="current-question-count" aria-live="polite"></span><span class="current-question-state"></span></div>
+        <div id="qs"></div>
+        <div class="question-pager"><button class="question-pager-btn" data-question-prev type="button">السؤال السابق</button><span class="question-pager-count"></span><button class="question-pager-btn" data-question-next type="button">السؤال التالي</button></div>
+        <p class="submit-hint">زر «تسليم الامتحان» يظهر في السؤال الأخير، ويمكنك الوصول إليه من خريطة الأسئلة.</p>
+        <button class="pri" id="submit"><span>تسليم الامتحان</span><span class="button-icon" aria-hidden="true">✓</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="s-done" class="card res hide">
+    <h2>تم تسليم الامتحان</h2>
+    <div id="score"></div>
+    <p class="mut" id="status"></p>
+    <div id="review"></div>
+  </div>
+</div>
+<script>
+/* ================= الإعدادات (عدّلها فقط) ================= */
+const CONFIG = {
+  examTitle: "الامتحان الإلكتروني",
+  minutes: 30,              // مدة الامتحان بالدقائق
+  pick: {hard: 0, medium: 0, easy: 0},   // عدد الأسئلة المسحوبة عشوائياً من كل مستوى
+  shuffleQuestions: true,   // خلط ترتيب الأسئلة لكل طالب
+  shuffleOptions: true,     // خلط ترتيب الخيارات لكل طالب
+  showScore: true,          // إظهار العلامة للطالب بعد التسليم
+  oneAttemptPerDevice: true,
+  serverGrading: false,     // true = التصحيح بالسيرفر (الأجوبة الصحيحة مش بالصفحة) — بيتفعّل تلقائياً بنسخة السيرفر المحلي
+  claimNames: true,         // حجز الاسم: أول ما يبدأ الطالب يختفي اسمه من القائمة على كل الأجهزة
+  lockdown: true,           // منع النسخ واللصق وزر الماوس اليمين واختصارات أدوات المطوّر
+  endpoint: ""              // رابط Google Apps Script (فارغ = وضع تجريبي بدون حفظ)
+};
+/* بنك الأسئلة: صفحة الطالب بتوصلها أسئلة ورقته بس من السيرفر (/start)، ومعاينة المعلم بيعبّيها السيرفر بالبنك كامل — لا تعدّل هنا */
+const QUESTIONS = [
+];
+const ROSTER = /*ROSTER*/{};
+/* ========================================================= */
+
+const $=id=>document.getElementById(id);
+const shuffle=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+$('title').textContent=CONFIG.examTitle;
+const TOTAL=CONFIG.pick.hard+CONFIG.pick.medium+CONFIG.pick.easy;
+$('meta').textContent=`${TOTAL} سؤال — المدة ${CONFIG.minutes} دقيقة`;
+
+const fill=(el,items,ph)=>{el.textContent='';const add=(t,v)=>{const o=document.createElement('option');o.textContent=t;o.value=v;el.appendChild(o)};add(ph,'');items.forEach(x=>add(x,x));el.disabled=!items.length};   /* بالـ DOM مش innerHTML: اسم فيه < أو &amp; يظهر كما هو */
+fill($('g'),Object.keys(ROSTER),'اختر الصف');
+const kf=(g,s,n)=>`done|${CONFIG.examTitle}|${g}|${s}|${n}`;
+const key=()=>kf($('g').value,$('sec').value,$('nm').value);
+const skey=()=>kf(student.grade,student.section,student.name);
+$('g').onchange=()=>{fill($('sec'),Object.keys(ROSTER[$('g').value]||{}),'اختر الشعبة');fill($('nm'),[],'اختر الاسم');chk()};
+/* حجز الاسم: الأسماء اللي بدأت الامتحان من جهاز ثاني بتختفي من القائمة */
+const DEV=(()=>{let d=store.get('device|id');if(!d){d=Math.random().toString(36).slice(2)+Date.now().toString(36);store.set('device|id',d)}return d})();
+const CLAIM_ON=()=>!!(CONFIG.claimNames&&CONFIG.endpoint);
+const claimKey=(g,s,n)=>`${CONFIG.examTitle}|${g}|${s}|${n}`;
+const claimUrl=(act,extra)=>{const p=new URLSearchParams(Object.assign({dev:DEV},extra));return CONFIG.endpoint.startsWith('/')?`/${act}?${p}`:`${CONFIG.endpoint}?action=${act}&${p}&t=${Date.now()}`};
+let TAKEN=new Set();
+async function loadTaken(){if(!CLAIM_ON())return;try{const r=await fetch(claimUrl('taken',{}));const j=await r.json();TAKEN=new Set(j.taken||[])}catch(e){}}
+async function claimName(g,s,n){if(!CLAIM_ON())return 'ok';try{const r=await fetch(claimUrl('claim',{key:claimKey(g,s,n)}));return (await r.text()).trim()}catch(e){return 'error'}}
+const namesFor=(g,s)=>((ROSTER[g]||{})[s]||[]).filter(n=>!TAKEN.has(claimKey(g,s,n)));
+$('sec').onchange=async()=>{$('claimmsg').classList.add('hide');await loadTaken();fill($('nm'),namesFor($('g').value,$('sec').value),'اختر الاسم');chk()};
+$('nm').onchange=chk;
+if(CONFIG.needCode){$('codeLbl').classList.remove('hide');$('code').classList.remove('hide');$('code').oninput=chk}
+function chk(){
+  const ok=$('nm').value!=='' && $('nm').value;
+  const done=ok&&CONFIG.oneAttemptPerDevice&&store.get(key())==='done';   /* بنحجب فقط اللي سلّم فعلاً، مش اللي بدأ */
+  $('blocked').classList.toggle('hide',!done);
+  $('start').disabled=!ok||!!done||(CONFIG.needCode&&!$('code').value.trim());
+}
+
+let paper=[],student={},timer,hb,deadline,finished=false,currentQuestion=0;
+/* نسخة السيرفر المحلي: السيرفر هو اللي يحدد الأسئلة وترتيب الخيارات والوقت، والصفحة بس تعرضها */
+async function srv(path,body){try{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return await r.json()}catch(e){return{status:'error'}}}
+/* رسالة المعلم: تظهر مرة واحدة لكل رسالة جديدة (النص عبر textContent عشان ما ينحقن HTML) */
+/* مراجعة الأخطاء بعد التسليم (إعداد مراجعة_الأخطاء): فورية، أو بعد ما ينهي المعلم الامتحان */
+/* معاينة المعلم: مراجعة الأخطاء بالمتصفح (الإجابات الصحيحة موجودة بالصفحة لأنها محميّة وللمعلم فقط) */
+function previewReview(ans){
+  const AL='أبجد',wrong=paper.map((q,i)=>({q,v:ans[i]})).filter(x=>x.v!==x.q.a);
+  const opt=(q,j)=>j<0?'لم تجب':`${AL[j]}) ${QUESTIONS[q.id].o[j]}`;
+  $('review').innerHTML=wrong.length?'<h2 style="margin-top:18px">الأسئلة الخاطئة ('+wrong.length+')</h2>'+wrong.map(x=>`<div class="rv" dir="auto"><div>س${x.q.n}: ${x.q.q}</div><div class="no">إجابتك: ${opt(x.q,x.v)}</div><div class="ok">الصحيحة: ${opt(x.q,x.q.a)}</div></div>`).join(''):'<p class="mut">لا توجد أخطاء</p>';
+}
+async function loadReview(){
+  if(CONFIG.reviewMode==='no'||!CONFIG.reviewMode)return;
+  const P=await srv('/review',{key:claimKey(student.grade,student.section,student.name),dev:DEV});
+  if(P.status==='wait'){$('review').innerHTML='<p class="mut">ستظهر مراجعة أخطائك بعد أن ينهي المعلم الامتحان.</p>';setTimeout(loadReview,10000);return}
+  if(P.status!=='ok')return;
+  const AL='أبجد',opt=(q,j)=>j<0?'لم تجب':`${AL[j]}) ${q.o[j]}`;
+  $('review').innerHTML=P.items.length?'<h2 style="margin-top:18px">مراجعة الأسئلة الخاطئة</h2>'+P.items.map(it=>{const q=it.q!==undefined?it:QUESTIONS.find(x=>x.n===it.n);
+    return `<div class="rv" dir="auto"><div>${q.q}</div><div class="no">إجابتك: ${opt(q,it.given)}</div><div class="ok">الصحيحة: ${opt(q,it.correct)}</div></div>`}).join(''):'<p class="mut">لا توجد أخطاء، أحسنت!</p>';
+}
+const MK='msg|'+CONFIG.examTitle;
+function showMsg(m){if(!m||!m.id||!m.text||finished)return;if(+store.get(MK)>=m.id)return;store.set(MK,String(m.id));$('noticeText').textContent='📢 '+m.text;$('notice').classList.remove('hide')}
+const fromServer=P=>{if(Array.isArray(P.qs)&&P.qs.length)QUESTIONS.splice(0,QUESTIONS.length,...P.qs);   /* أسئلة ورقة هذا الطالب بس (السيرفر ما بيبعت البنك) */
+  return P.ids.map((n,i)=>{const id=QUESTIONS.findIndex(q=>q.n===n),q=QUESTIONS[id];return{id,n,level:q.level,q:q.q,a:q.a,o:P.orders[i].map(j=>({t:q.o[j],j}))}})};
+/* إجابات محفوظة بالسيرفر {رقم السؤال: الخيار} -> {فهرس السؤال بالصفحة: الخيار} (للاستعادة على جهاز جديد) */
+const ansFromP=P=>{const o={};for(const [n,j] of Object.entries(P.ans||{})){const id=QUESTIONS.findIndex(q=>q.n===+n);if(id>=0)o[id]=j}return o};
+let pingT;
+const SK='state|'+CONFIG.examTitle, LK='leave|'+CONFIG.examTitle;
+let leaveN=0,leaveSec=0,awayAt=0;
+function getAns(){const a={};paper.forEach(q=>{const c=document.querySelector(`input[name=q${q.id}]:checked`);if(c)a[q.id]=+c.value});return a}
+function saveState(){store.set(SK,JSON.stringify({student,n:QUESTIONS.length,order:paper.map(q=>({id:q.id,o:q.o.map(o=>o.j)})),deadline,current:currentQuestion,ans:getAns(),qs:CONFIG.serverGrading?QUESTIONS:undefined}))}   /* qs: أسئلة الورقة على الجهاز، عشان لو انعاد التحميل والسيرفر واقف */
+function closeQuestionMap(restoreFocus){
+  $('s-exam').classList.remove('map-open');
+  const toggle=document.querySelector('.question-map-toggle');
+  if(toggle)toggle.setAttribute('aria-expanded','false');
+  if(restoreFocus&&toggle)toggle.focus();
+}
+function updateQuestionMap(){
+  const cards=$('qs').querySelectorAll('.card'),items=document.querySelectorAll('.question-map-item'),total=paper.length;
+  let answered=0;
+  cards.forEach((card,i)=>{
+    const done=!!card.querySelector('input[type="radio"]:checked'),item=items[i];
+    if(done)answered++;
+    card.classList.toggle('question-hidden',i!==currentQuestion);
+    const heading=card.querySelector('.q');if(heading)heading.setAttribute('tabindex','-1');
+    if(item){
+      item.classList.toggle('is-answered',done);item.classList.toggle('is-unanswered',!done);item.classList.toggle('is-current',i===currentQuestion);
+      item.setAttribute('aria-label',`السؤال ${i+1}: ${done?'تمت الإجابة':'لم تتم الإجابة'}${i===currentQuestion?'، السؤال الحالي':''}`);
+      if(i===currentQuestion)item.setAttribute('aria-current','step');else item.removeAttribute('aria-current');
+    }
+  });
+  const remaining=total-answered,pct=total?Math.round(answered/total*100):0;
+  const answeredEl=document.querySelector('.map-answered-count'),remainingEl=document.querySelector('.map-unanswered-count'),toggleCount=document.querySelector('.map-toggle-count'),progress=document.querySelector('.map-progress');
+  if(answeredEl)answeredEl.textContent=answered;
+  if(remainingEl)remainingEl.textContent=remaining;
+  if(toggleCount)toggleCount.textContent=`مجاب ${answered} · باقي ${remaining}`;
+  if(progress){progress.setAttribute('aria-valuemax',total);progress.setAttribute('aria-valuenow',answered);progress.firstElementChild.style.width=pct+'%'}
+  const current=cards[currentQuestion],currentDone=!!(current&&current.querySelector('input[type="radio"]:checked'));
+  const currentLabel=document.querySelector('.current-question-count'),currentState=document.querySelector('.current-question-state'),pagerCount=document.querySelector('.question-pager-count');
+  if(currentLabel)currentLabel.textContent=`السؤال ${total?currentQuestion+1:0} من ${total}`;
+  if(pagerCount)pagerCount.textContent=`${total?currentQuestion+1:0} / ${total}`;
+  if(currentState){currentState.textContent=currentDone?'تمت الإجابة':'لم تتم الإجابة';currentState.classList.toggle('is-answered',currentDone)}
+  const previous=document.querySelector('[data-question-prev]'),next=document.querySelector('[data-question-next]');
+  if(previous)previous.disabled=currentQuestion<=0;
+  if(next)next.disabled=currentQuestion>=total-1;
+  const last=currentQuestion>=total-1;$('submit').classList.toggle('submit-later',!last);   /* زر التسليم بآخر سؤال بس: ما ينضغط بالغلط وسط الامتحان */
+  const hint=document.querySelector('.submit-hint');if(hint)hint.classList.toggle('submit-later',last);
+}
+function setCurrentQuestion(index,closeDrawer,moveFocus){
+  if(!paper.length)return;
+  currentQuestion=Math.max(0,Math.min(Math.floor(Number(index)||0),paper.length-1));
+  updateQuestionMap();saveState();
+  if(closeDrawer)closeQuestionMap(false);
+  const card=$('qs').children[currentQuestion],heading=card&&card.querySelector('.q');
+  if(card)card.scrollIntoView({behavior:'smooth',block:'start'});
+  if(moveFocus&&heading)heading.focus();
+}
+function buildQuestionMap(){
+  const grid=document.querySelector('.question-map-grid');if(!grid)return;
+  grid.textContent='';
+  paper.forEach((q,i)=>{
+    const button=document.createElement('button');button.type='button';button.className='question-map-item';
+    const number=document.createElement('span');number.className='map-item-number';number.textContent=String(i+1);
+    const status=document.createElement('span');status.className='map-item-status';status.setAttribute('aria-hidden','true');
+    button.appendChild(number);button.appendChild(status);button.onclick=()=>setCurrentQuestion(i,true,true);grid.appendChild(button);
+  });
+  const toggle=document.querySelector('.question-map-toggle');
+  if(toggle)toggle.onclick=()=>{const opened=$('s-exam').classList.toggle('map-open');toggle.setAttribute('aria-expanded',String(opened));if(opened){const first=grid.querySelector('button');if(first)first.focus()}};
+  const backdrop=document.querySelector('.question-map-backdrop');if(backdrop)backdrop.onclick=()=>closeQuestionMap(true);
+  const close=document.querySelector('.map-close');if(close)close.onclick=()=>closeQuestionMap(true);
+  const previous=document.querySelector('[data-question-prev]'),next=document.querySelector('[data-question-next]');
+  if(previous)previous.onclick=()=>setCurrentQuestion(currentQuestion-1,false,false);
+  if(next)next.onclick=()=>setCurrentQuestion(currentQuestion+1,false,false);
+  updateQuestionMap();
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('s-exam').classList.contains('map-open'))closeQuestionMap(true)});
+function render(ans,current=0){
+  const effMark=q=>{const m=QUESTIONS[q.id].marks;if(m===undefined||!CONFIG.finalMark)return m;const W=paper.reduce((a,x)=>a+QUESTIONS[x.id].marks,0);return Math.round(m*CONFIG.finalMark/W*100)/100};   /* العلامة الفعلية لو في علامة نهائية */
+  const mkTxt=m=>m===2?'علامتان':(Number.isInteger(m)&&m>=3&&m<=10?m+' علامات':m+' علامة');
+  /* dir="auto": الاتجاه يتحدد من لغة السؤال (عربي ← يمين، إنجليزي ← يسار) فتصلح المواد الإنجليزية والمختلطة */
+  $('qs').innerHTML=paper.map((q,n)=>{const mk=effMark(q);return `<div class="card" dir="auto"><div class="q">${n+1}. ${q.q}${mk!==undefined&&mk!==1?`<span class="mk" dir="rtl">(${mkTxt(mk)})</span>`:''}</div>`+
+    q.o.map(o=>`<label class="opt"><input type="radio" name="q${q.id}" value="${o.j}"${ans[q.id]===o.j?' checked':''}><span dir="auto">${o.t}</span></label>`).join('')+`</div>`}).join('');
+  currentQuestion=Math.max(0,Math.min(Math.floor(Number(current)||0),Math.max(0,paper.length-1)));
+  buildQuestionMap();
+  $('qs').onchange=()=>{updateQuestionMap();saveState();if(CONFIG.serverGrading){clearTimeout(pingT);pingT=setTimeout(ping,1500)}};   /* كل تغيير بالإجابة ينحفظ بالسيرفر خلال ثانيتين */
+  $('s-login').classList.add('hide');$('s-exam').classList.remove('hide');$('bar').classList.remove('hide');
+  $('who').textContent=student.name;
+  scrollTo(0,0);   /* زر «ابدأ» كان تحت: بدون هيك الطالب بيبدأ من نص الصفحة والسؤال الأول مخفي فوق */
+  timer=setInterval(tick,500);tick();
+  if(CONFIG.serverGrading){hb=setInterval(ping,8000);ping()}
+}
+$('start').onclick=async()=>{
+  $('start').disabled=true;
+  const g=$('g').value,s=$('sec').value,n=$('nm').value;
+  let P=null;
+  if(CONFIG.serverGrading){
+    P=await srv('/start',{key:claimKey(g,s,n),dev:DEV,code:$('code').value});
+    if(P.status==='error'||P.status==='bad'){alert('تعذّر الاتصال بالسيرفر، حاول مرة ثانية');chk();return}
+    if(P.status==='badcode'){alert('رمز الدخول غير صحيح');chk();return}
+    if(P.status==='locked'){alert('محاولات خاطئة كثيرة، انتظر دقيقة ثم جرّب مرة ثانية');chk();return}
+    if(P.status==='closed'){alert('أنهى المعلم الامتحان، لا يمكن البدء الآن');chk();return}
+  }
+  const cr=P?(P.status==='ok'?'ok':'taken'):await claimName(g,s,n);
+  if(cr==='taken'){$('claimmsg').classList.remove('hide');await loadTaken();fill($('nm'),namesFor(g,s),'اختر الاسم');chk();return}
+  leaveN=0;leaveSec=0;awayAt=0;store.del(LK);
+  student={grade:g,section:s,name:n};
+  store.set(skey(),'started');
+  if(P){paper=fromServer(P);deadline=Date.now()+P.remain*1000}
+  else{
+    let qs=[];
+    for(const lv of ['hard','medium','easy']){
+      const pool=QUESTIONS.map((q,i)=>({id:i,n:q.n,level:q.level,q:q.q,a:q.a,o:q.o.map((t,j)=>({t,j}))})).filter(q=>q.level===lv);
+      qs=qs.concat(shuffle(pool).slice(0,CONFIG.pick[lv]));
+    }
+    qs.sort((x,y)=>x.n-y.n);
+    if(CONFIG.shuffleQuestions)qs=shuffle(qs);
+    if(CONFIG.shuffleOptions)qs.forEach(q=>q.o=shuffle(q.o));
+    paper=qs;deadline=Date.now()+CONFIG.minutes*60000;
+  }
+  render(P?ansFromP(P):{});saveState();
+};
+/* استئناف: لو انعاد تحميل الصفحة أثناء الامتحان نرجع لنفس الأسئلة والإجابات والوقت المتبقي */
+(async function(){
+  const raw=store.get(SK);if(!raw||raw==='')return;
+  try{
+    const s=JSON.parse(raw);if(Array.isArray(s.qs)&&s.qs.length)QUESTIONS.splice(0,QUESTIONS.length,...s.qs);if(s.n!==QUESTIONS.length)throw 0;
+    student=s.student;deadline=s.deadline;
+    paper=s.order.map(x=>{const q=QUESTIONS[x.id];return{id:x.id,n:q.n,level:q.level,q:q.q,a:q.a,o:x.o.map(j=>({t:q.o[j],j}))}});
+    let sa={};
+    if(CONFIG.serverGrading){   /* الوقت والورقة من السيرفر (لو السيرفر مش متاح مؤقتاً نكمل بالمحفوظ محلياً) */
+      const P=await srv('/resume',{key:claimKey(student.grade,student.section,student.name),dev:DEV});
+      if(P.status==='ok'){paper=fromServer(P);deadline=Date.now()+P.remain*1000;sa=ansFromP(P)}
+      else if(P.status!=='error')throw 0;   /* انفكّ الحجز أو انسلّم: نرجع لشاشة الدخول */
+    }
+    try{const l=JSON.parse(store.get(LK)||'{}');leaveN=l.n||0;leaveSec=l.s||0}catch(e){}
+    render(Object.assign({},sa,s.ans||{}),s.current||0);   /* إجابات السيرفر + إجابات هذا الجهاز (الأحدث بتغلب) */
+  }catch(e){try{const k0=kf(student.grade,student.section,student.name);if(store.get(k0)==='started')store.del(k0)}catch(e2){}store.del(SK);student={};paper=[]}
+})();
+function tick(){
+  const left=Math.max(0,deadline-Date.now()),m=Math.floor(left/60000),s=Math.floor(left%60000/1000);
+  $('clock').textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+  if(left<=0)finish(true);
+}
+$('submit').onclick=()=>{
+  const un=paper.filter(q=>!document.querySelector(`input[name=q${q.id}]:checked`)).length;
+  if(un&&!confirm(`باقي ${un} سؤال بدون إجابة. هل تريد التسليم؟`))return;
+  finish(false);
+};
+async function finish(auto){
+  if(finished)return;leaveEnd();finished=true;clearInterval(timer);clearInterval(hb);$('away').classList.add('hide');$('notice').classList.add('hide');
+  let score=0;const ans=[];
+  paper.forEach(q=>{
+    const c=document.querySelector(`input[name=q${q.id}]:checked`);
+    const v=c?+c.value:-1;ans.push(v);if(q.a!==undefined&&v===q.a)score++;
+  });
+  if(!CONFIG.serverGrading){store.set(skey(),'done');store.del(SK);store.del(LK)}   /* بوضع السيرفر نعلّمه «سلّم» فقط بعد ما السيرفر يأكد الاستلام، وإلا لو فشل الحفظ بينحجب الجهاز */
+  $('s-exam').classList.remove('map-open');$('s-exam').classList.add('hide');$('bar').classList.add('hide');$('s-done').classList.remove('hide');
+  const esc=t=>String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const info=`<table class="info"><tr><th>اسم الطالب</th><td>${esc(student.name)}</td></tr><tr><th>الصف</th><td>${esc(student.grade)}</td></tr><tr><th>الشعبة</th><td>${esc(student.section)}</td></tr>`;
+  const scoreRow=(sc,tt)=>CONFIG.showScore?`<tr><th>العلامة</th><td><span class="big" dir="ltr" style="display:inline-block">${sc} / ${tt}</span></td></tr>`:'';
+  const tail=CONFIG.showScore?'':'<p>تم استلام إجاباتك.</p>';
+  if(CONFIG.serverGrading){
+    $('score').innerHTML=info+'</table>';$('status').textContent='جارٍ التصحيح وحفظ النتيجة...';
+    const srec={exam:CONFIG.examTitle,grade:student.grade,section:student.section,name:student.name,ids:paper.map(q=>q.n),answers:ans.join(','),auto:auto?'انتهى الوقت':'تسليم يدوي',time:new Date().toLocaleString('en-GB'),leave:leaveN?`${leaveN} مرة (${leaveSec} ث)`:'لم يخرج',dev:DEV,key:claimKey(student.grade,student.section,student.name)};
+    for(let t=0;t<4;t++){
+      try{const r=await fetch(CONFIG.endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(srec)});
+        if(r.status===409){releasedReset();return}
+        if(!r.ok)throw new Error(r.status);const j=await r.json();store.set(skey(),'done');store.del(SK);store.del(LK);
+        $('score').innerHTML=info+scoreRow(j.score,j.total)+'</table>'+tail;$('status').textContent='تم حفظ النتيجة ✓';loadReview();
+        return}catch(e){await new Promise(r=>setTimeout(r,1500))}
+    }
+    $('status').textContent='تعذّر الحفظ (انقطع الاتصال بالسيرفر). لا تسكّر الصفحة: بنرجع نحاول تلقائياً أول ما يرجع السيرفر، وإن استمرت المشكلة أبلغ المعلم فوراً.';
+    const rt=setInterval(async()=>{const P=await srv('/resume',{key:claimKey(student.grade,student.section,student.name),dev:DEV});if(P&&P.status!=='error'){clearInterval(rt);location.reload()}},5000);return;   /* السيرفر رجع: نعيد تحميل الصفحة لحالها (بترجع لنفس الورقة والإجابات، وبتسلّم لو خلص الوقت) */
+  }
+  $('score').innerHTML=info+scoreRow(score,paper.length)+'</table>'+tail;if(CONFIG.teacherPreview)previewReview(ans);
+  const rec={exam:CONFIG.examTitle,grade:student.grade,section:student.section,name:student.name,score,total:paper.length,answers:ans.join(','),key:paper.map(q=>q.a).join(','),qdata:paper.map(q=>({n:q.n,level:q.level,q:q.q,o:QUESTIONS[q.id].o,a:q.a})),auto:auto?'انتهى الوقت':'تسليم يدوي',time:new Date().toLocaleString('en-GB'),leave:leaveN?`${leaveN} مرة (${leaveSec} ث)`:'لم يخرج'};
+  if(!CONFIG.endpoint){$('status').textContent=CONFIG.teacherPreview?'معاينة المعلم: النتيجة غير محفوظة ولا تظهر بالمراقبة.':'وضع تجريبي: لم يتم حفظ النتيجة (لم يُضبط رابط الحفظ).';return}
+  $('status').textContent='جارٍ حفظ النتيجة...';
+  for(let t=0;t<3;t++){
+    try{await fetch(CONFIG.endpoint,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(rec)});
+      $('status').textContent='تم حفظ النتيجة ✓';return}catch(e){await new Promise(r=>setTimeout(r,1500))}
+  }
+  $('status').textContent='تعذّر الحفظ، أبلغ المعلم فوراً. رمز النتيجة: '+btoa(unescape(encodeURIComponent(JSON.stringify(rec)))).slice(0,200);
+}
+
+/* أُلغي حجز الطالب (فك الحجز أو نقل لجهاز آخر): نرجّعه لشاشة الدخول ليبدأ من جديد */
+function releasedReset(msg){
+  finished=true;clearInterval(timer);clearInterval(hb);
+  try{const k0=kf(student.grade,student.section,student.name);if(store.get(k0)==='started')store.del(k0)}catch(e){}
+  store.del(SK);store.del(LK);
+  alert(msg||'أعاد المعلم فتح اسمك. اختر اسمك من جديد لتبدأ الامتحان.');
+  location.reload();
+}
+function ping(){
+  if(finished||!CONFIG.serverGrading)return;
+  const away=awayAt?Math.round((Date.now()-awayAt)/1000):0;
+  const ga=getAns(),ansN={};paper.forEach(q=>{if(ga[q.id]!==undefined)ansN[q.n]=ga[q.id]});
+  fetch('/ping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:claimKey(student.grade,student.section,student.name),dev:DEV,ans:ansN,answered:Object.keys(ga).length,total:paper.length,remain:Math.max(0,Math.round((deadline-Date.now())/1000)),leaveN,leaveSec:leaveSec+away})}).then(r=>r.json()).then(j=>{if(finished)return;if(j.released){releasedReset();return}if(j.submitted){finish(false);return}if(typeof j.remain==='number')deadline=Date.now()+j.remain*1000;showMsg(j.msg)}).catch(()=>{});
+}
+/* منع النسخ/اللصق/الاستعراض (ردع فقط، مش حماية مطلقة) */
+if(CONFIG.lockdown){
+  document.body.classList.add('lock');
+  ['copy','cut','paste','contextmenu','selectstart','dragstart'].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault()));
+  document.addEventListener('keydown',e=>{
+    const k=(e.key||'').toLowerCase(),c=e.ctrlKey||e.metaKey;
+    if(e.key==='F12'||(c&&e.shiftKey&&['i','j','c','k'].includes(k))||(c&&['u','s','p','c','x','v','a'].includes(k))||(c&&e.key==='Insert')||(e.shiftKey&&e.key==='Insert')){
+      e.preventDefault();e.stopPropagation();return false;
+    }
+  },true);
+}
+
+/* تسجيل الخروج من صفحة الامتحان (تاب ثاني / نافذة ثانية) */
+function leaveStart(){ if(finished||awayAt||$('s-exam').classList.contains('hide'))return; awayAt=Date.now();leaveN++;saveLeave();$('away').classList.remove('hide'); }
+function leaveEnd(){ if(!awayAt)return; leaveSec+=Math.round((Date.now()-awayAt)/1000);awayAt=0;saveLeave(); }
+function saveLeave(){ store.set(LK,JSON.stringify({n:leaveN,s:leaveSec+(awayAt?Math.round((Date.now()-awayAt)/1000):0)})) }
+document.addEventListener('visibilitychange',()=>document.hidden?leaveStart():leaveEnd());
+addEventListener('blur',leaveStart);addEventListener('focus',leaveEnd);
+addEventListener('beforeunload',e=>{if(!finished&&!$('s-exam').classList.contains('hide')){e.preventDefault();e.returnValue=''}});
+</script>
+</body>
+</html>

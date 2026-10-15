@@ -1,0 +1,33 @@
+# بايثون
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# ملفات بيعملها السيرفر وقت التشغيل (بيانات امتحان، مش كود)
+results.csv
+submissions.jsonl
+papers.json
+claims.json
+state.json
+answers.json
+codes.json
+alive.txt
+exam_log.txt
+exam_info.txt
+exam_error.txt
+check_report.txt
+problem_report_*.txt
+students_from_zip.*
+settings_from_zip.txt
+.exam_data_unpacked
+archive_*/
+*.tmp
+.health_probe
+
+# بيانات امتحان حقيقية لو انحطّت هون بالغلط (الحزمة فيها القوالب بس)
+questions.xlsx
+questions.csv
+students.xlsx
+students.csv
+exam_data.zip
+images/
