@@ -5,7 +5,7 @@ import pytest
 from conftest import LoadFailed, PKG_SRC
 from test_http import Server
 
-MDS = sorted(PKG_SRC.glob("_md_sources/0[023]_*.md"))
+MDS = sorted(PKG_SRC.glob("_md_sources/0[02345]_*.md"))
 TEXT = "\n".join(p.read_text(encoding="utf-8") for p in MDS)
 
 
@@ -45,3 +45,13 @@ def test_every_setting_key_in_docs_is_known_to_the_server(pkg):
             pkg.load()
         except LoadFailed as e:
             assert "غير معروف" not in str(e), f"الدليل بيذكر الإعداد «{k}» والسيرفر ما بيعرفه"
+
+
+@pytest.mark.parametrize("stem, most", [("00_", 8), ("02_", 1), ("03_", 1), ("04_", 1), ("05_", 2)])
+def test_every_guide_has_its_pdf_and_printed_sheets_stay_one_page(stem, most):
+    """الأوراق اللي بتنطبع (قائمة الفحص، ورقة الأستاذ، ورقة الطوارئ) صفحة وحدة؛ وكل مصدر md إله PDF بنفس الاسم"""
+    pymupdf = pytest.importorskip("pymupdf")
+    md = next(PKG_SRC.glob(f"_md_sources/{stem}*.md"))
+    pdf = PKG_SRC / (md.stem + ".pdf")
+    assert pdf.exists(), pdf.name
+    assert pymupdf.open(str(pdf)).page_count <= most, pdf.name
