@@ -128,6 +128,8 @@ button.pri:disabled .button-icon{background:rgba(25,45,56,.08)}
 .opt:has(input:checked){border-color:var(--primary);background:var(--primary-soft);box-shadow:inset 0 0 0 1px var(--primary)}
 .qimg{display:block;width:auto;max-width:100%;height:auto;max-height:340px;margin:11px auto;border:1px solid #d9e2e6;border-radius:10px;background:#fff;padding:4px;object-fit:contain;-webkit-user-drag:none}
 .opt .qimg{max-height:170px;margin:6px auto}
+/* الكسور (السيرفر بيحوّل (x + 1)/(x − 2) لبسط فوق مقام). نفس FRAC_CSS بـ server.py */
+x-fr{display:inline-flex;flex-direction:column;align-items:stretch;vertical-align:middle;direction:ltr;unicode-bidi:isolate;margin:0 .12em;font-size:.92em;line-height:1.25;text-align:center}x-fr x-fr{font-size:1em}x-n,x-d{display:block;padding:0 .2em;white-space:nowrap}x-d{border-top:.09em solid currentColor}x-m{display:inline-block;direction:ltr;max-width:100%}
 #submit{margin-top:18px}
 #submit.submit-later,.submit-hint.submit-later{display:none}
 .submit-hint{margin:14px 2px 0;color:var(--muted);font-size:14px;text-align:center}

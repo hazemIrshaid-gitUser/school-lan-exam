@@ -35,7 +35,7 @@ def exam_with_students(pkg, servers):
 
 # ============================ نبضة الحياة ============================
 def test_heartbeat_file_is_refreshed_every_few_seconds(pkg, servers):
-    servers(pkg)
+    servers(pkg).get("/health.json")                                                              # المنفذ بيفتح قبل أول نبضة بلحظة؛ أول رد = خلص التشغيل
     t = float(pkg.p("alive.txt").read_text()); assert time.time() - t < 3                        # بتنكتب فوراً عند التشغيل
     time.sleep(4.5); t2 = float(pkg.p("alive.txt").read_text())
     assert t2 > t and time.time() - t2 < 4 and not pkg.p("alive.txt.tmp").exists()

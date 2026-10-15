@@ -285,6 +285,81 @@ def imgify(text):
     return re.sub(_PUA, lambda m: '<img class="qimg" src="/img/%s" alt="" draggable="false">' % urllib.parse.quote(IMG_LIST[ord(m.group()) - 0xE100]), text)
 def noimg(text):
     return re.sub(_PUA, "[صورة]", text)
+
+# ---------- الكسور: (x + 7)/(x² − 1) و 5π/6 و −3/4 بتنعرض بسط فوق خط فوق مقام ----------
+_SUPS = "²³¹" + "".join(map(chr, range(0x2070, 0x20A0)))       # أُسس ودلائل مرفوعة/منخفضة بتلحق آخر الحد: x² و (x − 1)²
+_STOP = "\n\u2066\u2067\u2068\u2069"                                     # القوس ما بيعبر سطر جديد ولا علامة عزل اتجاه
+def _wc(s, i):
+    """حرف من «كلمة» رياضية: أرقام وحروف لاتينية ويونانية و√ و∞، والنقطة العشرية بين رقمين (7.5)"""
+    c = s[i]
+    if (c.isascii() and c.isalnum()) or "Ͱ" <= c <= "Ͽ" or c in "√∞": return True
+    return c == "." and 0 < i < len(s) - 1 and s[i - 1] in "0123456789" and s[i + 1] in "0123456789"
+def _pair(s, i, step):
+    """مكان القوس المقابل للقوس اللي عند i (step=1 لـ «(» و -1 لـ «)»)، أو -1"""
+    d, k = 0, i
+    while 0 <= k < len(s):
+        if s[k] in _STOP: return -1
+        d += (s[k] == "(") - (s[k] == ")")
+        if d == 0: return k
+        k += step
+    return -1
+def _frac_at(s, j):
+    """الحدّين حوالين «/» اللي عند j: (بداية البسط، نهاية المقام، البسط، المقام) أو None لو مش كسر"""
+    a = j
+    while a > 0 and s[a - 1] == " ": a -= 1
+    e = a
+    while a > 0 and s[a - 1] in _SUPS: a -= 1
+    if a > 0 and s[a - 1] == ")":
+        a = _pair(s, a - 1, -1)
+        if a < 0: return None
+    while a > 0 and _wc(s, a - 1): a -= 1
+    b = j + 1
+    while b < len(s) and s[b] == " ": b += 1
+    st = b
+    while b < len(s) and _wc(s, b): b += 1
+    if b < len(s) and s[b] == "(" and (b == st or re.search("[A-Za-zͰ-Ͽ]", s[st:b])):   # 1/(x+1) و 1/sin(x)، بس 2/3(x+1) = ثلثين ضرب القوس
+        c = _pair(s, b, 1)
+        if c > 0: b = c + 1
+    while b < len(s) and s[b] in _SUPS: b += 1
+    num, den = s[a:e], s[st:b]
+    if not num.strip(_SUPS) or not den.strip(_SUPS): return None
+    if (a > 0 and s[a - 1] == "/") or (b < len(s) and s[b] == "/"): return None       # تاريخ 15/10/2026 أو a/b/c: بيضل زي ما هو
+    if num.isascii() and den.isascii() and num.isalpha() and den.isalpha() and (len(num) > 1 or len(den) > 1 or (num in "mshgl" and den in "mshgl")):
+        return None                                                                       # وحدات: cm/s و in/s و km/h و m/s
+    return a, b, num, den
+def _unwrap(t):
+    return t[1:-1] if t[:1] == "(" and _pair(t, 0, 1) == len(t) - 1 else t                    # (x + 7) فوق الخط بتصير x + 7
+def fracs(s):
+    """نص السؤال -> HTML (مهرّب) والكسور فيه عناصر x-fr. عناصر خاصة مش span، لأن تنسيق الخيارات بالقالب بيغيّر كل span جوّاتها"""
+    d, cands = 0, []
+    for k, c in enumerate(s):
+        if c == "(": d += 1
+        elif c == ")": d = max(0, d - 1)
+        elif c == "/": cands.append((d, k))
+    done = []
+    for _, j in sorted(cands):                       # الأقل عمقاً أول: (1/x)/2 هو كسر بسطه 1/x، والكسر الداخلي بيترسم جوّا البسط
+        if any(a <= j < b for a, b, *_ in done): continue
+        m = _frac_at(s, j)
+        if m and not any(m[0] < b and a < m[1] for a, b, *_ in done): done.append(m)
+    out, last = [], 0
+    for a, b, num, den in sorted(done):
+        out += [E(s[last:a]), "<x-fr><x-n>", fracs(_unwrap(num)), "</x-n><x-d>", fracs(_unwrap(den)), "</x-d></x-fr>"]
+        last = b
+    return "".join(out) + E(s[last:])
+_ISO = re.compile("⁦([^⁦-⁩]*)⁩")
+_MATH_OPS = ("<x-fr>", "=", "+", "−", "×", "÷", "±", "≤", "≥", "≠", "≈", "|", "∪", "∩", "&lt;", "&gt;")
+def qhtml(text):
+    """نص سؤال أو خيار زي ما بينعرض بأي صفحة: مهرّب، والكسور مرسومة، والصور.
+    المعادلة جوّا جملة عربية بتنعرض كتلة وحدة من اليسار لليمين (x-m): لو ما وسعها السطر بالجوال بتنزل كاملة أو بتلتفّ جوّا حالها
+    بترتيبها — بدونها كان نصها الثاني يطلع بالسطر اللي بعده قبل الأول بترتيب القراءة. النص الإنجليزي والرياضي لحاله ما بيتأثر"""
+    h = fracs(text)
+    if re.search("[؀-ۿ]", text):
+        h = _ISO.sub(lambda m: "⁦<x-m>" + m.group(1) + "</x-m>⁩" if any(c in m.group(1) for c in _MATH_OPS) else m.group(0), h)
+    return imgify(h)
+FRAC_CSS = ("x-fr{display:inline-flex;flex-direction:column;align-items:stretch;vertical-align:middle;direction:ltr;unicode-bidi:isolate;"
+            "margin:0 .12em;font-size:.92em;line-height:1.25;text-align:center}x-fr x-fr{font-size:1em}"
+            "x-n,x-d{display:block;padding:0 .2em;white-space:nowrap}x-d{border-top:.09em solid currentColor}"
+            "x-m{display:inline-block;direction:ltr;max-width:100%}")
 def check_images():
     if not IMG_LIST: return
     print(f"الصور: {len(IMG_LIST)} صورة مستعملة بالأسئلة")
@@ -589,8 +664,7 @@ def build_preview():
     i = t.index("const CONFIG = {"); j = t.index("};", i) + 2
     t = t[:i] + conf + t[j:]
     t = t.replace("/*ROSTER*/{}", json.dumps({"المعلم": {"معاينة": ["معاينة المعلم"]}}, ensure_ascii=False))
-    esc = lambda x: html.escape(x, quote=False)
-    qs = [{"n": q["n"], "level": q["level"], "page": q["page"], "marks": q.get("marks", 1), "q": imgify(esc(q["q"])), "o": [imgify(esc(o)) for o in q["o"]], "a": q["a"]} for q in QLIST]
+    qs = [{"n": q["n"], "level": q["level"], "page": q["page"], "marks": q.get("marks", 1), "q": qhtml(q["q"]), "o": [qhtml(o) for o in q["o"]], "a": q["a"]} for q in QLIST]
     i = t.index("const QUESTIONS = ["); j = t.index("];\nconst ROSTER", i)
     t = t[:i] + "const QUESTIONS = " + json.dumps(qs, ensure_ascii=False).replace("</", "<\\/") + t[j + 1:]
     t = t.replace("<title>الامتحان الإلكتروني</title>", "<title>معاينة المعلم</title>", 1)
@@ -634,7 +708,7 @@ def remain_of(k): return max(0, int(deadline(k) - time.time()))
 def pub_q(n):
     """السؤال زي ما بينعرض للطالب: النص والخيارات والعلامة بس (بدون الإجابة الصحيحة والحل والمستوى والمرجع)"""
     q = BANK[n]
-    return {"n": n, "marks": q["marks"], "q": imgify(E(q["q"])), "o": [imgify(E(o)) for o in q["o"]]}
+    return {"n": n, "marks": q["marks"], "q": qhtml(q["q"]), "o": [qhtml(o) for o in q["o"]]}
 def paper_reply(k):
     p = PAPERS[k]
     return {"status": "ok", "ids": p["ids"], "orders": p["orders"], "qs": [pub_q(n) for n in p["ids"]], "remain": remain_of(k), "msg": STATE["msg"], "ans": ANS.get(k, {})}
@@ -1018,7 +1092,7 @@ def report_page():
     return h + "</table>"
 
 # ---------- ورقة الطالب (للمعلم فقط) ----------
-SHEET_CSS = "<style>.q{border:1px solid #bbb;border-radius:6px;padding:8px 10px;margin:8px 0;page-break-inside:avoid}.q.bad{border-color:#b3261e;background:#fff5f4}.q.good{border-color:#2e7d32}.o{margin:2px 14px}.o.right{color:#1b6b2a;font-weight:bold}.o.given.wrongc{color:#b3261e;font-weight:bold}.hd{border-bottom:2px solid #14566b;margin-bottom:8px}.pg{page-break-after:always}.pg:last-child{page-break-after:auto}@media print{.noprint{display:none}body{background:#fff;max-width:none;margin:0}}</style>"
+SHEET_CSS = "<style>" + FRAC_CSS + ".q{border:1px solid #bbb;border-radius:6px;padding:8px 10px;margin:8px 0;page-break-inside:avoid}.q.bad{border-color:#b3261e;background:#fff5f4}.q.good{border-color:#2e7d32}.o{margin:2px 14px}.o.right{color:#1b6b2a;font-weight:bold}.o.given.wrongc{color:#b3261e;font-weight:bold}.hd{border-bottom:2px solid #14566b;margin-bottom:8px}.pg{page-break-after:always}.pg:last-child{page-break-after:auto}@media print{.noprint{display:none}body{background:#fff;max-width:none;margin:0}}</style>"
 def sheet_html(sub, wrong_only):
     ok = sub["score"]; tot = sub["total"]
     late_txt = f" &nbsp; <b style='color:#b3261e'>تسليم متأخر:</b> {sub['late']} ث" if sub.get("late") else ""
@@ -1026,11 +1100,11 @@ def sheet_html(sub, wrong_only):
     for i, (n, v) in enumerate(zip(sub["ids"], sub["answers"]), 1):
         q = BANK[n]; right = v == q["a"]
         if wrong_only and right: continue
-        h += f"<div class='q {'good' if right else 'bad'}'><div><b>{i}. (س{n} — {LVL.get(q['level'], '')} — {mtxt(eff_mark(q['marks'], sub['ids']))})</b> {'✓' if right else '✗'} <span dir=auto>{imgify(E(q['q']))}</span></div>"
+        h += f"<div class='q {'good' if right else 'bad'}'><div><b>{i}. (س{n} — {LVL.get(q['level'], '')} — {mtxt(eff_mark(q['marks'], sub['ids']))})</b> {'✓' if right else '✗'} <span dir=auto>{qhtml(q['q'])}</span></div>"
         for j, o in enumerate(q["o"]):
             c = "o" + (" right" if j == q["a"] else "") + (" given" if j == v else "") + (" wrongc" if j == v and not right else "")
             mark = (" ← إجابة الطالب" if j == v else "") + (" ✓ الصحيحة" if j == q["a"] else "")
-            h += f"<div class='{c}'>{L[j]}) <span dir=auto>{imgify(E(o))}</span><small>{mark}</small></div>"
+            h += f"<div class='{c}'>{L[j]}) <span dir=auto>{qhtml(o)}</span><small>{mark}</small></div>"
         if v < 0: h += "<div class=o style='color:#b3261e'>لم يجب</div>"
         h += "</div>"
     return h + "</div>"
@@ -1074,8 +1148,8 @@ def key_page():
         if not qs: continue
         h += f"<h3>{LVL[lv]} ({len(qs)})</h3>"
         for q in qs:
-            h += f"<div class='q'><b>س{q['n']}</b> <small>(سطر {q['row']} بالملف{' — ' + html.escape(str(q['page'])) if q['page'] else ''} — {mtxt(key_mark(q['marks']))})</small> <span dir=auto>{imgify(E(q['q']))}</span>"
-            for j, o in enumerate(q["o"]): h += f"<div class='o{' right' if j == q['a'] else ''}'>{L[j]}) <span dir=auto>{imgify(E(o))}</span>{' ✓' if j == q['a'] else ''}</div>"
+            h += f"<div class='q'><b>س{q['n']}</b> <small>(سطر {q['row']} بالملف{' — ' + html.escape(str(q['page'])) if q['page'] else ''} — {mtxt(key_mark(q['marks']))})</small> <span dir=auto>{qhtml(q['q'])}</span>"
+            for j, o in enumerate(q["o"]): h += f"<div class='o{' right' if j == q['a'] else ''}'>{L[j]}) <span dir=auto>{qhtml(o)}</span>{' ✓' if j == q['a'] else ''}</div>"
             if q["sol"]: h += f"<div class=o><small>الحل: {html.escape(q['sol'])}</small></div>"
             h += "</div>"
     return h
