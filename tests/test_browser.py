@@ -96,9 +96,15 @@ def pick(page, i, j):
     show(page, i); page.locator("#qs .card").nth(i).locator("label.opt").nth(j).click()
 
 
+def ask_submit(page):
+    """بيوصل لآخر سؤال ويضغط «تسليم الامتحان»: بتطلع نافذة التأكيد (لسا ما تسلّم شي)"""
+    show(page, page.locator("#qs .card").count() - 1); page.click("#submit"); page.wait_for_selector("#confirm-submit:not(.hide)")
+    page.wait_for_timeout(450)                                                                       # النافذة بتتجاهل الضغط بأول 0.4 ث (ضغطة مزدوجة بالغلط)
+
+
 def submit(page):
-    """التسليم: زر «تسليم الامتحان» بيظهر بالسؤال الأخير بس"""
-    show(page, page.locator("#qs .card").count() - 1); page.click("#submit")
+    """التسليم: زر «تسليم الامتحان» بيظهر بالسؤال الأخير بس، وبعده تأكيد «نعم، سلّم الامتحان»"""
+    ask_submit(page); page.click("#cs-yes")
 
 
 def solve(page, wrong=0):
@@ -181,9 +187,11 @@ def test_submit_all_correct_shows_full_score_and_blocks_device(phone, web):
 def test_submit_with_unanswered_asks_confirmation_and_scores(phone, web):
     page = phone(); login(page, web); solve(page, wrong=2)
     page.query_selector_all("#qs .card")[7].evaluate("c=>c.querySelectorAll('input').forEach(i=>i.checked=false)")      # سؤال بدون إجابة
-    submit(page)
+    ask_submit(page)
+    assert "باقي 1 سؤال بدون إجابة" in page.inner_text("#cs-un") and page.is_visible("#cs-un")         # التنبيه جوّا نفس نافذة التأكيد
+    page.click("#cs-yes")
     page.wait_for_function("document.getElementById('status').textContent.includes('✓')")
-    assert any("بدون إجابة" in m for m in page.dialogs)
+    assert not page.dialogs                                                                          # بدون نوافذ المتصفح خالص
     got = int(re.search(r"(\d+) / 8", clean(page.inner_text("#score"))).group(1))
     assert got <= 6
 

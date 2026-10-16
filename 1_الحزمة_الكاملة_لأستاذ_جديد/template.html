@@ -101,6 +101,18 @@ button.pri:hover:not(:disabled){background:var(--primary-deep);border-color:var(
 button.pri:disabled{border-color:#d0d9de;background:#e7ecef;color:#687780;opacity:1;cursor:not-allowed}
 .button-icon{display:inline-grid;place-items:center;width:24px;height:24px;margin-inline-start:9px;border-radius:50%;background:rgba(255,255,255,.16);font-size:16px;line-height:1}
 button.pri:disabled .button-icon{background:rgba(25,45,56,.08)}
+/* نافذة تأكيد التسليم: من تصميم الصفحة (مش confirm) لأنه بعض متصفحات التطبيقات المدمجة ما بتعرض نوافذ المتصفح وبترجّع «لا» لحالها */
+.modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(14,40,50,.62)}
+.modal-card{width:100%;max-width:440px;max-height:calc(100vh - 32px);overflow:auto;background:#fff;border-radius:18px;padding:22px 20px 18px;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+.modal-card h2{margin:0 0 10px;font-size:20px;color:var(--primary)}
+.modal-card p{margin:0 0 10px;line-height:1.8}
+.modal-warn{padding:10px 12px;border:1px solid var(--warning-border);border-radius:11px;background:var(--warning-bg);color:#604914;font-weight:700}
+.modal-q{font-weight:800}
+.modal-actions{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.modal-actions button{min-height:52px;padding:10px 14px;border-radius:12px;border:1px solid var(--primary);font-weight:800}
+#cs-yes{background:var(--primary);color:#fff}#cs-yes:hover{background:var(--primary-deep)}
+#cs-no{background:#fff;color:var(--primary)}
+@media(min-width:480px){.modal-actions{flex-direction:row}.modal-actions button{flex:1}}
 .exam-note{margin:4px 2px 16px}
 .exam-note .eyebrow{display:block;margin-bottom:3px}
 .exam-note .mut{margin:0;color:var(--muted);font-size:14px}
@@ -338,6 +350,18 @@ body{background:radial-gradient(ellipse at 50% -180px,#d8e8ed 0,transparent 560p
     <div id="review"></div>
   </div>
 </div>
+<div id="confirm-submit" class="modal hide" role="dialog" aria-modal="true" aria-labelledby="cs-title" aria-describedby="cs-body">
+  <div class="modal-card">
+    <h2 id="cs-title">تأكيد تسليم الامتحان</h2>
+    <p id="cs-body">أنت الآن بصدد تسليم إجاباتك للامتحان، وبالتالي <b>لا يمكنك إعادة الامتحان مرة أخرى أو التعديل على إجاباتك</b>.</p>
+    <p id="cs-un" class="modal-warn hide"></p>
+    <p class="modal-q">هل أنت متأكد من عملية التسليم؟</p>
+    <div class="modal-actions">
+      <button type="button" id="cs-no">لا، أرجع إلى أسئلتي</button>
+      <button type="button" id="cs-yes">نعم، سلّم الامتحان</button>
+    </div>
+  </div>
+</div>
 <script>
 /* ================= الإعدادات (عدّلها فقط) ================= */
 const CONFIG = {
@@ -554,13 +578,35 @@ function tick(){
   $('clock').textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
   if(left<=0)finish(true);
 }
-$('submit').onclick=()=>{
+let csClose=null;                                       /* بتسكّر نافذة التأكيد (مثلاً لما ينتهي الوقت وهي مفتوحة) */
+function askSubmit(un){
+  return new Promise(res=>{
+    const m=$('confirm-submit'),yes=$('cs-yes'),no=$('cs-no'),w=$('cs-un'),back=document.activeElement;
+    w.textContent=un?`تنبيه: باقي ${un} سؤال بدون إجابة.`:'';w.classList.toggle('hide',!un);
+    m.classList.remove('hide');document.body.style.overflow='hidden';no.focus();   /* التركيز على «لا» عشان Enter بالغلط ما يسلّم */
+    const key=e=>{
+      if(e.key==='Escape'){e.preventDefault();done(false)}
+      else if(e.key==='Tab'){e.preventDefault();(document.activeElement===no?yes:no).focus()}
+    };
+    const done=v=>{
+      csClose=null;m.classList.add('hide');document.body.style.overflow='';yes.onclick=no.onclick=m.onclick=null;
+      document.removeEventListener('keydown',key,true);if(back&&back.focus)try{back.focus()}catch(e){}
+      res(v)
+    };
+    const t0=Date.now(),ready=()=>Date.now()-t0>400;     /* ضغطة مزدوجة على «تسليم الامتحان» ما لازم تضرب «نعم» أو الخلفية فوراً */
+    csClose=done;yes.onclick=()=>{if(ready())done(true)};no.onclick=()=>{if(ready())done(false)};m.onclick=e=>{if(e.target===m&&ready())done(false)};
+    document.addEventListener('keydown',key,true)
+  })
+}
+let asking=false;
+$('submit').onclick=async()=>{
+  if(asking||finished)return;asking=true;
   const un=paper.filter(q=>!document.querySelector(`input[name=q${q.id}]:checked`)).length;
-  if(un&&!confirm(`باقي ${un} سؤال بدون إجابة. هل تريد التسليم؟`))return;
-  finish(false);
+  const ok=await askSubmit(un);asking=false;
+  if(ok)finish(false);
 };
 async function finish(auto){
-  if(finished)return;leaveEnd();finished=true;clearInterval(timer);clearInterval(hb);$('away').classList.add('hide');$('notice').classList.add('hide');
+  if(finished)return;if(csClose)csClose(false);leaveEnd();finished=true;clearInterval(timer);clearInterval(hb);$('away').classList.add('hide');$('notice').classList.add('hide');
   let score=0;const ans=[];
   paper.forEach(q=>{
     const c=document.querySelector(`input[name=q${q.id}]:checked`);
@@ -598,7 +644,7 @@ async function finish(auto){
 
 /* أُلغي حجز الطالب (فك الحجز أو نقل لجهاز آخر): نرجّعه لشاشة الدخول ليبدأ من جديد */
 function releasedReset(msg){
-  finished=true;clearInterval(timer);clearInterval(hb);
+  if(csClose)csClose(false);finished=true;clearInterval(timer);clearInterval(hb);
   try{const k0=kf(student.grade,student.section,student.name);if(store.get(k0)==='started')store.del(k0)}catch(e){}
   store.del(SK);store.del(LK);
   alert(msg||'أعاد المعلم فتح اسمك. اختر اسمك من جديد لتبدأ الامتحان.');

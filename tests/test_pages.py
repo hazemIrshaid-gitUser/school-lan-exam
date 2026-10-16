@@ -79,7 +79,7 @@ def test_teacher_preview_uses_pages_too(pkg, browser):
         ctx.add_cookies([{"name": ck.split("=")[0], "value": ck.split("=", 1)[1], "url": url(w)}])
         page.goto(url(w) + "teacher"); page.wait_for_selector("#s-exam:not(.hide)")                # المعاينة بتبدأ لحالها (بدون اختيار اسم)
         assert page.locator("#qs .card").count() == 11 and page.locator(".question-map-item").count() == 11 and page.is_visible(".question-map")   # الخريطة جانبية عالكمبيوتر
-        page.locator(".question-map-item").nth(10).click(); page.click("#submit")
+        page.locator(".question-map-item").nth(10).click(); page.click("#submit"); page.wait_for_selector("#confirm-submit:not(.hide)"); page.wait_for_timeout(450); page.click("#cs-yes")
         page.wait_for_function("document.getElementById('status').textContent.includes('معاينة المعلم')")
         assert not errs
         ctx.close()
