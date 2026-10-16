@@ -55,3 +55,12 @@ def test_every_guide_has_its_pdf_and_printed_sheets_stay_one_page(stem, most):
     pdf = PKG_SRC / (md.stem + ".pdf")
     assert pdf.exists(), pdf.name
     assert pymupdf.open(str(pdf)).page_count <= most, pdf.name
+
+
+def test_emergency_docs_say_the_teacher_needs_editor_access_beforehand():
+    """الفورم الاحتياطي بيفتحه الأستاذ بحسابه: بدون مشاركة المجلد معه كـ Editor بيطلعله «You need access» (ما بيكفي رابط التعديل)"""
+    for stem in ("04_", "05_"):
+        t = next(PKG_SRC.glob(f"_md_sources/{stem}*.md")).read_text(encoding="utf-8")
+        assert "Editor" in t and "You need access" in t, stem
+    assert "Editor" in next(PKG_SRC.glob("_md_sources/00_*.md")).read_text(encoding="utf-8")
+    assert "Editor" in (PKG_SRC / "05_برنامج_الفورم_الاحتياطي.txt").read_text(encoding="utf-8")
