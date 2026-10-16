@@ -843,6 +843,7 @@ def archive_all():
     if os.path.exists(OUT):                      # ننسخ (مش ننقل) لأنه ممكن يكون مفتوح بـ Excel
         shutil.copy2(OUT, os.path.join(d, os.path.basename(OUT)))
     CLAIMS.clear(); LIVE.clear(); SUBS.clear(); PAPERS.clear(); ANS.clear(); ANS_DIRTY[0] = False
+    reh_reset()                                  # أي بروفة كانت شغّالة بتنتهي مع الامتحان القديم
     STATE["bank_fp"] = BANK_FP; STATE.pop("bank_changed", None)
     if SET.get("auto_title"): new_auto_title()
     else: save_state()
@@ -860,6 +861,83 @@ def new_auto_title():
         SET["title"] = old; STATE["auto_title"] = old; save_state(); print("تنبيه: تعذّر تجهيز عنوان جديد للامتحان:", repr(e)); return
     PAGE, PICK, PREVIEW = page, pick, prev; STATE["auto_title"] = t; save_state()
     print("عنوان الامتحان الجديد:", t)
+
+# ---------- بروفة الضغط: كل أجهزة المختبر بتطلب «ابدأ» بنفس اللحظة (حسب ساعة السيرفر، مش ساعة الأجهزة) ----------
+# بالذاكرة بس (بتنطفي بإعادة تشغيل السيرفر). كل الدوال هون بتتنادى داخل LOCK. البروفة بتستعمل مسار الطالب الحقيقي (/start و/ping و/submit)
+REH_MAX_MIN = 60                              # أطول مدة بتضل فيها البروفة شغّالة (وبتنطفي لحالها)
+REH_MAX_DEVS = 300
+REH = {"on": False, "until": 0.0, "at": 0.0, "full": False, "gen": 0, "devs": {}, "keys": set(), "arr": {}}
+def reh_release():
+    """بنفك حجز أسماء البروفة اللي ما سلّمت (ما فيها شغل حقيقي): عشان كل جولة تطلب ورقة جديدة، وعشان ما تضل أسماء محجوزة للامتحان الحقيقي"""
+    n = 0
+    for k in list(REH["keys"]):
+        if k in SUBS: continue
+        c = CLAIMS.pop(k, None) is not None; p = PAPERS.pop(k, None) is not None
+        n += 1 if (c or p) else 0
+        LIVE.pop(k, None)
+        if ANS.pop(k, None) is not None: ANS_DIRTY[0] = True
+    if n: save_claims(); save_papers()
+    return n
+def reh_stop(why="أوقفها المشرف"):
+    if REH["on"]: print("بروفة الضغط: انطفت (" + why + ")")
+    reh_release()
+    REH["on"] = False; REH["at"] = 0.0; REH["keys"] = set()
+def reh_reset():
+    REH.update(on=False, until=0.0, at=0.0, full=False, devs={}, arr={}); REH["keys"] = set()
+def reh_tick():
+    if REH["on"] and time.time() > REH["until"]: reh_stop("انتهت مدتها")
+def reh_assign(dev):
+    r = REH["devs"].get(dev)
+    if r or len(REH["devs"]) >= REH_MAX_DEVS: return r
+    used = set(CLAIMS) | set(PAPERS) | set(SUBS) | {v["key"] for v in REH["devs"].values()}
+    for g, secs in ROSTER.items():
+        for s, names in secs.items():
+            for nm in names:
+                k = f'{SET["title"]}|{g}|{s}|{nm}'
+                if k not in used:
+                    r = {"n": len(REH["devs"]) + 1, "key": k, "grade": g, "section": s, "name": nm, "res": {}}
+                    REH["devs"][dev] = r; REH["keys"].add(k)
+                    return r
+    return None
+def reh_command(cmd, d):
+    """أمر المشرف من صفحة المراقبة. بيرجّع نص الخطأ أو None"""
+    reh_tick()
+    try: secs = float(d.get("secs", 60)); mins = float(d.get("mins", 30))
+    except (TypeError, ValueError): return "رقم غلط"
+    if cmd == "on":
+        if not 0.05 <= mins <= REH_MAX_MIN: return "المدة لازم تكون بين 1 و60 دقيقة"
+        if SET["needCode"]: return "رمز الدخول مفعّل بـ settings.txt: البروفة بتجرّب الدخول بدون رمز، فعطّله مؤقتاً"
+        if STATE["closed_at"]: return "الامتحان مُنهى: اضغط «إعادة فتح الامتحان» أول"
+        dirty = len((set(CLAIMS) | set(PAPERS) | set(SUBS)) - REH["keys"])
+        if dirty: return f"في {dirty} طالب بدأوا أو سلّموا امتحاناً (أو بيانات قديمة): اضغط «بداية امتحان جديد» أول، والبروفة بتنعمل قبل الامتحان الحقيقي"
+        if not REH["on"]: REH["devs"] = {}; REH["arr"] = {}
+        REH.update(on=True, until=time.time() + mins * 60, at=0.0, full=False)
+        print(f"بروفة الضغط: شغّالة {mins:g} دقيقة — افتحوا على الأجهزة /rehearsal")
+    elif cmd == "go":
+        if not REH["on"]: return "البروفة مش شغّالة: اضغط «تفعيل البروفة» أول"
+        if not REH["devs"]: return "ما في أجهزة جاهزة: افتحوا صفحة البروفة على الأجهزة أول"
+        if not 1 <= secs <= 600: return "الموعد لازم يكون بين 1 و600 ثانية"
+        if any(v["key"] in SUBS for v in REH["devs"].values()): return "في أجهزة سلّمت بالجولة السابقة: اضغط «بداية امتحان جديد» عشان تعيد البروفة"
+        reh_release()
+        REH.update(at=time.time() + secs, full=bool(d.get("full")), gen=REH["gen"] + 1, arr={})
+        REH["until"] = max(REH["until"], REH["at"] + 300)
+        for v in REH["devs"].values(): v["res"] = {}
+        print(f"بروفة الضغط: الجولة بعد {secs:g} ث على {len(REH['devs'])} جهاز" + (" (مع حل وتسليم)" if REH["full"] else ""))
+    elif cmd == "off": reh_stop()
+    else: return "أمر غلط"
+    return None
+def reh_summary():
+    if not REH["devs"] and not REH["on"]: return None
+    devs = list(REH["devs"].values()); now = time.time()
+    st = [v["res"]["start"] for v in devs if "start" in v["res"]]; sb = [v["res"]["submit"] for v in devs if "submit" in v["res"]]
+    ok = [x for x in st if x["ok"]]; ms = sorted(x["ms"] for x in ok); sms = sorted(x["ms"] for x in sb if x["ok"])
+    arr = list(REH["arr"].values())
+    return {"on": REH["on"], "left": max(0, int(REH["until"] - now)) if REH["on"] else 0, "at_in": round(REH["at"] - now, 1) if REH["at"] > now else None,
+            "full": REH["full"], "joined": len(devs), "reported": len(st), "ok": len(ok), "fail": len(st) - len(ok), "papers": sum(1 for v in devs if v["key"] in PAPERS),
+            "ms_avg": int(sum(ms) / len(ms)) if ms else None, "ms_p95": ms[min(len(ms) - 1, int(0.95 * len(ms)))] if ms else None, "ms_max": ms[-1] if ms else None,
+            "skew_max": max((abs(x["skew"]) for x in st), default=None), "spread_ms": int((max(arr) - min(arr)) * 1000) if len(arr) > 1 else 0,
+            "submit_ok": sum(1 for x in sb if x["ok"]), "submit_fail": sum(1 for x in sb if not x["ok"]), "submit_ms_max": sms[-1] if sms else None,
+            "fails": [{"n": v["n"], "name": v["name"], "status": v["res"]["start"]["status"]} for v in devs if "start" in v["res"] and not v["res"]["start"]["ok"]][:10]}
 
 # ---------- تجميع البيانات للمراقبة والتقارير ----------
 def find_keys():
@@ -1004,6 +1082,8 @@ tr.ok td:first-child{border-right-color:var(--ok)}tr.live td:first-child{border-
 .comp{background:#e8f2f5;color:#14566b;border:1px solid #9cc6d4;border-radius:10px;padding:10px 16px;margin-bottom:12px;font-weight:bold}.comp.sk{background:var(--livebg);color:var(--live);border-color:#e0a800}
 .closed{background:var(--badbg);color:var(--bad);border:1px solid var(--bad);border-radius:10px;padding:10px 16px;margin-bottom:12px;font-weight:bold}
 .sec>summary .btn{font-size:12px;padding:3px 10px;margin-inline-start:6px}
+.reh{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:12px}.reh>summary{cursor:pointer;padding:12px 16px}.rehin{padding:0 16px 12px}
+.rehtools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0}.rehtools select{padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}.reh table{margin:8px 0}
 </style>
 <div class=top><div class=wrap style="padding:0"><h1>مراقبة الامتحان</h1><small id=ttl>__TITLE__</small>
 <div class=nav><a href=/report>📊 التقرير والتحليل</a><a href=/report.xlsx>⬇ تنزيل Excel</a><a href=/sheet>🖨 ورقات الطلاب / طباعة</a><a href=/key>🔑 مفتاح الإجابات</a><a href=/codes>🔢 رموز دخول الطلاب</a><a href=/teacher>🔍 معاينة الامتحان كاملاً</a><a href=/health>🩺 فحص السيرفر</a></div></div></div>
@@ -1015,6 +1095,10 @@ tr.ok td:first-child{border-right-color:var(--ok)}tr.live td:first-child{border-
 <div id=closedbar class=closed style="display:none">⏹ الامتحان منتهٍ — الطلاب يُسلَّمون تلقائياً ولا يمكن البدء. <a href="#" onclick="closeExam(false);return false">إعادة فتح الامتحان</a></div>
 <div class=tools><input id=q placeholder="🔍 ابحث عن اسم طالب..." oninput="draw()"><button class="btn o" onclick="allSec(true)">فتح كل الشعب</button><button class="btn o" onclick="allSec(false)">طي كل الشعب</button><span class=mut id=upd></span></div>
 <div class=tools><button class="btn o" onclick="ext('all')">⏱ تمديد الوقت للجميع</button><button class="btn o" onclick="msg()">📢 رسالة للطلاب</button><button class="btn r" onclick="closeExam(true)">⏹ إنهاء الامتحان للجميع</button><button class="btn o" onclick="subAll()">📥 تسليم من لم يسلّم</button><span class=mut id=lastmsg></span></div>
+<details class=reh id=rehbox><summary><b>🧪 بروفة الضغط</b> <span class=mut id=rehsum>— مطفية</span></summary><div class=rehin>
+<p class=mut>كل أجهزة المختبر بتطلب «ابدأ» بنفس اللحظة حسب <b>ساعة السيرفر</b> (مش ساعة الأجهزة)، وبتشوف هون النتيجة. ① فعّلها. ② افتح على كل جهاز <b dir=ltr>__LINK__/rehearsal</b> وخلّي الشاشة شغّالة. ③ اضغط «ابدأ الجولة». ④ بعد ما تخلص اضغط زر الأرشفة والتصفير الأحمر أسفل الصفحة. بتنفع قبل الامتحان بس: لو في طلاب بدأوا ما بتتفعّل.</p>
+<div class=rehtools><button class="btn o" id=rehon onclick="reh({rehearsal:'on'})">تفعيل البروفة (30 دقيقة)</button><select id=rehsecs><option value=30>بعد 30 ث</option><option value=60 selected>بعد 60 ث</option><option value=120>بعد 120 ث</option></select><label><input type=checkbox id=rehfull> حل عشوائي وتسليم</label><button class=btn id=rehgo onclick="rehGo()">▶ ابدأ الجولة</button><button class="btn r" onclick="reh({rehearsal:'off'})">إيقاف البروفة</button></div>
+<div id=rehstat></div></div></details>
 <div id=tbl></div>
 <div class=foot><span>قبل ما تبدأ امتحان جديد: اطبع ورقات الطلاب ونزّل ملف النتائج أولاً، لأن هذا الزر بيصفّر الشاشة.</span>
 <a class="btn r" href="#" onclick="newExam();return false">بداية امتحان جديد (أرشفة + تصفير)</a></div></div>
@@ -1075,9 +1159,127 @@ function draw(){
  }
  document.getElementById('tbl').innerHTML=h||'<div class=empty>لا نتائج مطابقة</div>';
  document.getElementById('upd').textContent='آخر تحديث: '+new Date().toLocaleTimeString('en-GB');
+ rehDraw();
+}
+async function reh(o){const r=await fetch('/monitor',{method:'POST',headers:{'Content-Type':'application/json','X-Exam-Action':'1'},body:JSON.stringify(o)});if(!r.ok){let m='';try{m=(await r.json()).error}catch(e){}alert(m||'ما زبط')}load()}
+function rehGo(){reh({rehearsal:'go',secs:parseInt(document.getElementById('rehsecs').value,10),full:document.getElementById('rehfull').checked})}
+function rehDraw(){
+ const R=J.reh,s=document.getElementById('rehsum'),t=document.getElementById('rehstat');
+ document.getElementById('rehon').disabled=!!(R&&R.on);document.getElementById('rehgo').disabled=!(R&&R.on&&R.joined);
+ if(!R){s.textContent='— مطفية';t.innerHTML='';return}
+ let sm=R.on?'— شغّالة (بتنطفي بعد '+Math.ceil(R.left/60)+' د) • أجهزة مسجّلة: '+R.joined:'— مطفية';
+ if(R.at_in)sm+=' • الجولة بعد '+Math.ceil(R.at_in)+' ث';
+ s.textContent=sm;
+ let h='';
+ if(R.joined){
+  const f=x=>x==null?'—':x+' م.ث';
+  h+='<table><tr><th>أجهزة مسجّلة</th><th>بدأوا بنجاح</th><th>فشلوا</th><th>أوراق انعملت بالسيرفر</th><th>وقت الرد (متوسط / 95% / أبطأ)</th><th>فرق وصول الطلبات للسيرفر</th><th>أكبر تأخر جهاز عن الموعد</th></tr><tr><td>'+R.joined+'</td><td>'+R.ok+' من '+R.reported+'</td><td>'+(R.fail?'<b class=warn>'+R.fail+'</b>':0)+'</td><td>'+R.papers+'</td><td>'+f(R.ms_avg)+' / '+f(R.ms_p95)+' / '+f(R.ms_max)+'</td><td>'+f(R.spread_ms)+'</td><td>'+f(R.skew_max)+'</td></tr></table>';
+  if(R.full)h+='<p class=mut>التسليم: نجح '+R.submit_ok+'، فشل '+R.submit_fail+'، أبطأ تسليم '+f(R.submit_ms_max)+'</p>';
+  if(R.fails&&R.fails.length)h+='<p class=warn>فشل: '+R.fails.map(x=>esc('جهاز '+x.n+' ('+x.name+') — '+x.status)).join('، ')+'</p>';
+  if(!R.on||R.reported)h+='<p class=mut>بعد ما تخلص: اضغط زر الأرشفة والتصفير الأحمر أسفل الصفحة عشان تصفّر.</p>'
+ }
+ t.innerHTML=h;
 }
 async function load(){try{J=await (await fetch('/monitor.json')).json();draw()}catch(e){document.getElementById('upd').textContent='⚠ انقطع الاتصال بالسيرفر'}}
 load();setInterval(load,4000);
+</script>"""
+REHEARSAL_PAGE = r"""<!doctype html><html lang=ar dir=rtl><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>بروفة الضغط</title>
+<style>
+body{margin:0;padding:18px;background:#f4f6f8;color:#1c2733;font-family:Tahoma,"Segoe UI",Arial,sans-serif;text-align:center;line-height:1.7}
+.card{max-width:460px;margin:0 auto;background:#fff;border:1px solid #dde3ea;border-radius:16px;padding:18px}
+h1{font-size:20px;margin:0 0 6px;color:#14566b}
+#big{font-size:76px;font-weight:bold;color:#14566b;direction:ltr;line-height:1.1;margin:10px 0}
+#msg{font-size:18px;min-height:30px}.mut{color:#667788;font-size:14px}
+.ok{color:#1b7f4b;font-weight:bold}.bad{color:#b3261e;font-weight:bold}
+table{margin:12px auto 0;border-collapse:collapse;font-size:15px}td{padding:4px 12px;border-top:1px solid #eee}
+</style>
+<div class=card>
+<h1>🧪 بروفة الضغط</h1>
+<div class=mut>خلّي هالصفحة مفتوحة والشاشة شغّالة، ولا تطلع منها. المشرف بيبدأ الجولة من جهاز السيرفر.</div>
+<div id=who class=mut style="margin-top:8px">...</div>
+<div id=big>--</div>
+<div id=msg></div>
+<table id=res></table>
+<div class=mut id=sync style="margin-top:10px"></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let DEV;try{DEV=localStorage.getItem('rehearsal|dev');if(!DEV){DEV='r'+Math.random().toString(36).slice(2,12)+Date.now().toString(36);localStorage.setItem('rehearsal|dev',DEV)}}catch(e){DEV='r'+Math.random().toString(36).slice(2,12)}
+let S=[],off=0,rtt=0,me=null,st=null,lastAt=0,timer=null,pingT=null,P=null,busy=false;
+const post=async(u,o)=>{const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});let j=null;try{j=await r.json()}catch(e){}return{http:r.status,j}};
+const rep=o=>post('/rehearsal/report',Object.assign({dev:DEV},o)).catch(()=>{});
+function row(label,ok,text){$('res').insertAdjacentHTML('beforeend','<tr><td>'+label+'</td><td class='+(ok?'ok':'bad')+'>'+(ok?'✓ ':'✗ ')+text+'</td></tr>')}
+function stopRun(){clearInterval(pingT);clearTimeout(timer);P=null}
+async function join(){const o=await post('/rehearsal/join',{dev:DEV});if(o.j&&o.j.status==='ok')me=o.j;else if(o.j&&o.j.status==='full')$('msg').textContent='ما في أسماء فاضية بقائمة الطلاب لهالجهاز'}
+async function poll(){
+ try{
+  const t0=Date.now(),r=await fetch('/rehearsal.json?t='+t0,{cache:'no-store'}),t1=Date.now(),j=await r.json();
+  S.push({rtt:t1-t0,off:j.now*1000-(t0+t1)/2});if(S.length>8)S.shift();
+  const b=S.reduce((a,y)=>y.rtt<a.rtt?y:a);off=b.off;rtt=b.rtt;st=j;
+  if(!j.on){if(me){me=null;stopRun();lastAt=0}}
+  else{
+   if(!me)await join();
+   if(me&&j.at&&j.at!==lastAt){lastAt=j.at;schedule(j)}
+  }
+  draw();
+ }catch(e){$('msg').textContent='⚠ انقطع الاتصال بالسيرفر'}
+}
+function draw(){
+ if(!st)return;
+ $('who').textContent=!st.on?'البروفة مطفية حالياً: المشرف بيشغّلها من صفحة المراقبة.':me?('جهاز رقم '+me.n+' — الاسم: '+me.name+' ('+me.grade+' '+me.section+')'):'جارٍ التسجيل...';
+ $('sync').textContent='فرق ساعة هالجهاز عن ساعة السيرفر: '+(off/1000).toFixed(1)+' ث • تأخر الشبكة: '+Math.round(rtt)+' م.ث';
+ if(!busy&&!P&&!$('msg').dataset.keep)$('msg').textContent=!st.on?'':me?(st.at&&st.at*1000-off>Date.now()-2000?'جاهز: البدء بنفس اللحظة مع باقي الأجهزة'+(st.full?' (مع حل عشوائي وتسليم)':''):'جاهز ✓ استنّى المشرف يبدأ الجولة'):''
+}
+function tickUI(){
+ if(busy||P)return;
+ if(!st||!st.on){$('big').textContent='--';return}
+ if(!me){$('big').textContent='...';return}
+ const left=(st.at*1000-off-Date.now())/1000;
+ if(!st.at||left<-2){$('big').textContent='✓';return}
+ $('big').textContent=left>0?Math.ceil(left):'الآن'
+}
+setInterval(tickUI,100);
+function schedule(j){
+ const target=j.at*1000-off,d=target-Date.now();
+ $('res').innerHTML='';delete $('msg').dataset.keep;
+ if(d<-1500){$('msg').textContent='فاتك موعد هالجولة: استنّى الجولة الجاية';$('msg').dataset.keep=1;return}
+ clearTimeout(timer);timer=setTimeout(()=>{while(Date.now()<target){}fire(j,target)},Math.max(0,d-40));
+}
+async function fire(j,target){
+ if(!me)return;
+ const skew=Date.now()-target;busy=true;$('msg').textContent='جارٍ طلب الورقة...';
+ const t0=performance.now();let o;try{o=await post('/start',{key:me.key,dev:DEV})}catch(e){o={http:0,j:{status:'network'}}}
+ const ms=Math.round(performance.now()-t0),r=o.j||{},ok=r.status==='ok';
+ await rep({stage:'start',ok,ms,status:ok?'ok':(r.status||('http'+o.http)),skew:Math.round(skew),rtt:Math.round(rtt)});
+ row('بدء الامتحان',ok,ms+' م.ث'+(ok?' ('+r.ids.length+' سؤال)':' — '+(r.status||o.http))+' • انطلق بفرق '+Math.round(skew)+' م.ث عن الموعد');
+ busy=false;
+ if(!ok){$('msg').textContent='فشل الطلب ✗';$('msg').dataset.keep=1;return}
+ P=r;P.mine={};P.full=!!j.full;P.at=j.at;$('msg').textContent=j.full?'جارٍ الحل العشوائي...':'نجح ✓ (الجهاز بيرسل نبضات مثل الطالب)';$('big').textContent='✓';
+ runLoop(P)
+}
+function runLoop(p){
+ clearInterval(pingT);const myAt=p.at;
+ const step=async()=>{
+  if(!st||!st.on||st.at!==myAt||P!==p){stopRun();return}
+  p.qs.filter(q=>p.mine[q.n]===undefined).slice(0,6).forEach(q=>{p.mine[q.n]=Math.floor(Math.random()*q.o.length)});
+  const answered=Object.keys(p.mine).length;
+  if(p.full&&answered>=p.qs.length){clearInterval(pingT);await submit(p);return}
+  try{await post('/ping',{key:me.key,dev:DEV,ans:p.mine,answered:answered,total:p.qs.length,remain:p.remain,leaveN:0,leaveSec:0})}catch(e){}
+ };
+ pingT=setInterval(step,8000);step()
+}
+async function submit(p){
+ $('msg').textContent='جارٍ التسليم...';
+ const answers=p.ids.map(n=>p.mine[n]!==undefined?p.mine[n]:0);
+ const t0=performance.now();let o;try{o=await post('/submit',{key:me.key,dev:DEV,ids:p.ids,answers:answers.join(','),auto:'بروفة',leave:'لم يخرج'})}catch(e){o={http:0,j:{}}}
+ const ms=Math.round(performance.now()-t0),r=o.j||{},ok=typeof r.score==='number';
+ await rep({stage:'submit',ok,ms,status:ok?'ok':('http'+o.http),skew:0,rtt:Math.round(rtt)});
+ row('التسليم',ok,ms+' م.ث'+(ok?' — العلامة '+r.score+' / '+r.total:''));
+ $('msg').textContent=ok?'خلصت الجولة ✓':'فشل التسليم ✗';$('msg').dataset.keep=1;P=null
+}
+let wl=null;async function lock(){try{wl=await navigator.wakeLock.request('screen')}catch(e){}}
+lock();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')lock()});
+poll();setInterval(poll,2000);
 </script>"""
 def report_page():
     ss, qs = section_stats(), question_stats()
@@ -1178,6 +1380,12 @@ class H(http.server.BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             return self.send(PAGE, "text/html; charset=utf-8")
         if path == "/ok": return self.send("OK\n")                       # للتجربة من جوال الطالب/المعلم: لو انفتحت بيوصل للسيرفر
+        if path == "/rehearsal": return self.send(REHEARSAL_PAGE, "text/html; charset=utf-8")         # صفحة بروفة الضغط (بتشتغل بس لما المشرف يفعّلها)
+        if path == "/rehearsal.json":                                    # حالة البروفة + ساعة السيرفر (الأجهزة بتحسب فرق ساعتها عن ساعة السيرفر منها)
+            with LOCK:
+                reh_tick(); o = {"on": REH["on"], "at": REH["at"], "gen": REH["gen"], "full": REH["full"]}
+            o["now"] = time.time()
+            return self.send(json.dumps(o), "application/json")
         if path in ("/health", "/health.json"):                          # فحص جاهزية السيرفر (للمعلم فقط، من جهاز السيرفر)
             if not self.teacher(): return self.not_local(path)
             d_ = health_data()
@@ -1213,8 +1421,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 if path == "/monitor.json":
                     rows = student_rows(); secs = defaultdict(list)
                     for r in rows: secs[f"{r['grade']} — شعبة {r['section']}"].append(r)
-                    c = Counter(r["status"] for r in rows)
-                    return self.send(json.dumps({"sections": secs, "closed": bool(STATE["closed_at"]), "msg": STATE["msg"]["text"], "comp": STATE.get("comp"), "bank_changed": bank_changed(), "c": {k: c.get(k, 0) for k in ("done", "live", "lost", "none")}}, ensure_ascii=False), "application/json; charset=utf-8")
+                    c = Counter(r["status"] for r in rows); reh_tick()
+                    return self.send(json.dumps({"sections": secs, "closed": bool(STATE["closed_at"]), "msg": STATE["msg"]["text"], "comp": STATE.get("comp"), "bank_changed": bank_changed(), "reh": reh_summary(), "c": {k: c.get(k, 0) for k in ("done", "live", "lost", "none")}}, ensure_ascii=False), "application/json; charset=utf-8")
                 if path == "/key": return self.send(key_page(), "text/html; charset=utf-8")
                 if path == "/teacher": return self.send(PREVIEW, "text/html; charset=utf-8")
                 if path == "/codes": return self.send(codes_page(), "text/html; charset=utf-8")
@@ -1256,6 +1464,9 @@ class H(http.server.BaseHTTPRequestHandler):
         if self.path == "/monitor":                     # أوامر المعلم: POST + ترويسة مخصصة (تمنع الطلبات من صفحات خارجية)
             if not self.teacher() or self.headers.get("X-Exam-Action") != "1": return self.send("للمعلم فقط", code=403)
             with LOCK:
+                if d.get("rehearsal"):                   # بروفة الضغط: on / go / off
+                    err = reh_command(str(d["rehearsal"]), d)
+                    return J({"error": err}, 400) if err else J({"ok": 1})
                 rk = d.get("release")
                 if rk in CLAIMS and rk not in SUBS:
                     del CLAIMS[rk]; PAPERS.pop(rk, None); LIVE.pop(rk, None); ANS.pop(rk, None); ANS_DIRTY[0] = True; save_claims(); save_papers(); print("فك حجز:", rk.split("|")[-1])
@@ -1285,9 +1496,30 @@ class H(http.server.BaseHTTPRequestHandler):
                     txt = str(d["message"]).strip()[:300]
                     if txt: STATE["msg"] = {"id": STATE["msg"]["id"] + 1, "text": txt}; save_state(); print("رسالة للطلاب:", txt)
             return J({"ok": 1})
+        if self.path == "/rehearsal/join":              # جهاز بيسجّل نفسه ببروفة الضغط: بياخذ اسم فاضي من قائمة الطلاب بالترتيب
+            with LOCK:
+                reh_tick()
+                if not REH["on"]: return J({"status": "off"})
+                if not isinstance(dev, str) or not 0 < len(dev) <= 64: return J({"status": "bad"}, 400)
+                r = reh_assign(dev)
+                if r is None: return J({"status": "full"})
+                return J({"status": "ok", "n": r["n"], "key": r["key"], "name": r["name"], "grade": r["grade"], "section": r["section"], "total": len(REH["devs"])})
+        if self.path == "/rehearsal/report":            # الجهاز بيبلّغ نتيجة كل مرحلة (بدء/تسليم) ووقتها
+            with LOCK:
+                reh_tick()
+                r = REH["devs"].get(dev) if isinstance(dev, str) else None
+                if r is None or d.get("stage") not in ("start", "submit"): return J({"status": "bad"}, 400)
+                def num_(x, lo, hi):
+                    try: return int(max(lo, min(hi, float(x))))
+                    except (TypeError, ValueError): return 0
+                r["res"][d["stage"]] = {"ok": bool(d.get("ok")), "ms": num_(d.get("ms"), 0, 600000), "status": str(d.get("status", ""))[:20],
+                                        "skew": num_(d.get("skew"), -600000, 600000), "rtt": num_(d.get("rtt"), 0, 600000)}
+                return J({"status": "ok"})
         if self.path == "/start":                       # بدء الطالب: حجز الاسم + السيرفر يسحب الأسئلة ويبدأ العدّاد
+            t_arr = time.time()                          # لحظة وصول الطلب (قبل انتظار القفل): بتفيد بقياس «بنفس اللحظة» ببروفة الضغط
             with LOCK:
                 if not dev or parse_key(k) is None: return J({"status": "bad"}, 400)
+                if k in REH["keys"]: REH["arr"].setdefault(k, t_arr)
                 if k in SUBS: return J({"status": "done"})
                 if k in CLAIMS and CLAIMS[k] != dev: return J({"status": "taken"})
                 if k not in CLAIMS or k not in PAPERS:
