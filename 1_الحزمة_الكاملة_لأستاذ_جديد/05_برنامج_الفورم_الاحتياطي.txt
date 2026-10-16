@@ -20,7 +20,7 @@ var SETTINGS = {
   easy: "",              // كم سؤال سهل. فاضي = كلها
   total: "",             // إذا عمود المستوى فاضي بالملف كله: كم سؤال. فاضي = كل الأسئلة
   questionMark: "",      // علامة واحدة لكل سؤال (بتغلب عمود العلامة). فاضي = من الملف (والفاضي هناك = 1)
-  versions: 1,           // كم نموذج: 1 = فورم واحد. 2 = نموذجين بأسئلة مختلفة (لما الملف فيه أسئلة أكثر من المطلوب)
+  versions: 1,           // كم نموذج (1 إلى 10): 1 = فورم واحد. 2 = نموذجين بأسئلة مختلفة (لما الملف فيه أسئلة أكثر من المطلوب)
   shuffleOptions: true   // خلط ترتيب الخيارات (true = نعم، false = لا)
 };
 // ==========================================================================================
@@ -35,10 +35,6 @@ var YES = ["نعم", "yes", "true", "1", "y", "نعم.", "ايوا", "أجل"], 
 var IMG_RE = /\[\s*(?:img|IMG|Img|صورة)\s*[:：]\s*([^\]\n]+?)\s*\]/g;
 var LRI = "⁦", PDI = "⁩";
 var MATH_RUN = /[A-Za-z0-9Ͱ-Ͽ←-⋿°π√∞∑∫±×÷−=<>≤≥≠≈^_\/|()\[\]{}⁰-₟²³¹.,:;%+\-'’ ]+/g;
-
-function onOpen() {
-  SpreadsheetApp.getUi().createMenu("📝 الفورم الاحتياطي").addItem("إنشاء الفورم من الأسئلة", "makeForm").addToUi();
-}
 
 function makeForm() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -55,7 +51,7 @@ function makeForm() {
   var pk = computePick(p.qs, SETTINGS);
   if (pk.errs.length) return fail(ss, pk.errs);
   var nv = given(SETTINGS.versions) ? toNum(SETTINGS.versions) : 1;
-  if (!(nv >= 1 && nv <= 5 && nv % 1 === 0)) return fail(ss, ["الإعداد versions لازم يكون من 1 إلى 5، لقيت «" + SETTINGS.versions + "»"]);
+  if (!(nv >= 1 && nv <= 10 && nv % 1 === 0)) return fail(ss, ["الإعداد versions لازم يكون من 1 إلى 10، لقيت «" + SETTINGS.versions + "»"]);
   var papers = [];
   for (var v = 0; v < nv; v++) papers.push(makePaper(p.qs, pk.pick, Math.random));
   var names = [];
@@ -75,16 +71,21 @@ function makeForm() {
   say(msg);
 }
 
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu("📝 الفورم الاحتياطي").addItem("إنشاء الفورم من الأسئلة", "makeForm").addToUi();
+}
+
 var MANUAL_STEPS =
-  "خطوتين بإيدك لكل فورم (Google ما بتسمح للبرنامج يعملهم):\n" +
-  "1) افتح «رابط التعديل» ← «الإعدادات» ← قسم الاختبار ← «يمكن للمجيبين الاطلاع على»: شيل ✓ عن «الأسئلة الفائتة» و«الإجابات الصحيحة»" +
-  " (Missed questions و Correct answers). بدونها اللي بيسلّم أول بيشوف الإجابات وبيبعتها لزملائه.\n" +
+  "قبل الامتحان، لكل فورم:\n" +
+  "1) افتح «رابط التعديل» ← «الإعدادات» ← قسم الاختبار ← «يمكن للمجيبين الاطلاع على»: تأكد إنه «الأسئلة الفائتة» و«الإجابات الصحيحة»" +
+  " (Missed questions و Correct answers) مش معلّمين ✓. Google بتطلعهم مطفيين، وإذا لقيتهم معلّمين شيلهم: بدونها اللي بيسلّم أول بيشوف الإجابات وبيبعتها لزملائه.\n" +
   "2) جرّب الفورم من زر المعاينة 👁 وتأكد من الأسئلة والإجابات.\n" +
   "الفورم مسكّر هلأ. وقت الطوارئ: «الردود» ← شغّل «قبول الردود».";
 
 // ---------- قراءة الأسئلة: نفس قواعد server.py ----------
 function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
 function given(v) { return String(v == null ? "" : v).trim() !== ""; }
+function num(x) { return String(Math.round(x * 100) / 100); }
 function toNum(s) {
   var t = String(s).trim().replace(/[٠-٩]/g, function (d) { return "٠١٢٣٤٥٦٧٨٩".indexOf(d); }).replace(/[٫،,]/g, ".");
   return /^\d+(\.\d+)?$/.test(t) ? parseFloat(t) : NaN;
@@ -216,7 +217,7 @@ function loadImages(ss, names) {
   return {blobs: blobs, errs: errs};
 }
 function buildForm(ss, title, paper, vi, nv, scale, blobs, rnd) {
-  var name = nv > 1 ? title + " (نموذج " + "أبجده".charAt(vi) + ")" : title;
+  var name = nv > 1 ? title + " (نموذج " + "أبجدهوزحطي".charAt(vi) + ")" : title;
   var total = 0;
   paper.forEach(function (q) { total += Math.round(q.marks * scale); });
   var form = FormApp.create(name);
@@ -224,7 +225,8 @@ function buildForm(ss, title, paper, vi, nv, scale, blobs, rnd) {
   form.setDescription("امتحان احتياطي" + (given(SETTINGS.minutes) ? "، مدته " + SETTINGS.minutes + " دقيقة" : "") + ".\n" +
                       "• اكتب اسمك الكامل وصفّك وشعبتك، واضغط «التالي».\n" +
                       "• اختر إجابة وحدة لكل سؤال. بعد ما تخلص اضغط «إرسال» مرة وحدة.\n" +
-                      "• عدد الأسئلة: " + paper.length + "، ومجموع العلامات: " + total + ".");
+                      "• عدد الأسئلة: " + paper.length + "، والعلامة من " + num(total / scale) +
+                      (scale !== 1 ? " (الفورم بيعرضها من " + total + "، يعني مضروبة بـ " + scale + ")" : "") + ".");
   form.setProgressBar(true);
   form.setShowLinkToRespondAgain(false);
   form.setConfirmationMessage("تم التسليم ✓");
@@ -243,7 +245,8 @@ function buildForm(ss, title, paper, vi, nv, scale, blobs, rnd) {
   });
   form.setShuffleQuestions(!hasImg);          // الخلط بيفصل الصورة عن سؤالها، فمع الصور الترتيب عشوائي بس ثابت للنموذج
   form.setAcceptingResponses(false);
-  form.setCustomClosedFormMessage("الامتحان الاحتياطي مش مفتوح هلأ. استنّى تعليمات الأستاذ.");
+  try { form.setCustomClosedFormMessage("الامتحان الاحتياطي مش مفتوح هلأ. استنّى تعليمات الأستاذ."); }
+  catch (e) { /* Google أحياناً بترفضها («Invalid data updating form»): بتطلع رسالة Google العادية إنه الفورم مسكّر */ }
   form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
   try {
     var parents = DriveApp.getFileById(ss.getId()).getParents();

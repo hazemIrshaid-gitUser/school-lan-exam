@@ -37,6 +37,7 @@ const FormApp = {
               "setShuffleQuestions", "setAcceptingResponses", "setCustomClosedFormMessage", "setCollectEmail", "setAllowResponseEdits",
               "setPublishingSummary", "setLimitOneResponsePerUser"]);
     f.setDestination = function (type, id) { this._dest = [type, id]; return this; };
+    if (inp.rejectClosedMessage) f.setCustomClosedFormMessage = function () { throw new Error("Invalid data updating form."); };
     const add = (t) => () => { const it = item(t); f.items.push(it); return it; };
     f.addTextItem = add("text"); f.addPageBreakItem = add("page"); f.addMultipleChoiceItem = add("mc"); f.addImageItem = add("image");
     f.getId = () => f.id;

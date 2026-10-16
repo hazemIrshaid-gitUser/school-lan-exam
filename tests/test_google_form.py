@@ -37,7 +37,7 @@ def test_default_bank_makes_one_closed_quiz_with_right_answers(tmp_path):
         n = int(re.search(r"\d+", it["title"]).group()); i = n - 1                     # bank(): الصحيح للسؤال n هو الخيار (n-1)%4
         right = [plain(v) for v, c in it["choices"] if c]
         assert right == [f"خ{i}-{'أبجد'[i % 4]}"] and len(it["choices"]) == 4 and it["points"] == 1 and it["required"] is False
-    assert "عدد الأسئلة: 11، ومجموع العلامات: 11" in f["description"]
+    assert "عدد الأسئلة: 11، والعلامة من 11." in f["description"]
     assert links(o)[1][1].startswith("https://forms.gle/") and "قبول الردود" in "".join(map(str, sum(links(o), [])))
     assert o["moved"] == ["form1"]                                                         # الفورم بنفس مجلد ملف الأسئلة
 
@@ -74,7 +74,7 @@ def test_no_levels_uses_total(tmp_path):
     ([q("س", ("1", "2"), level="constructor")], {}, "سطر 2: المستوى"),           # كلمة خاصة بجافاسكربت ما بتمرق كمستوى
     (bank(1, 1, 1), {"hard": 2}, "صعب مطلوب 2 والموجود 1"),
     ([q("س1", level="صعب", fixed="نعم"), q("س2", level="صعب", fixed="نعم")], {"hard": 1}, "الأسئلة الثابتة"),
-    (bank(), {"versions": 9}, "versions"),
+    (bank(), {"versions": 11}, "versions"),
 ])
 def test_bad_file_stops_with_a_clear_reason_and_makes_nothing(tmp_path, rows, settings, needle):
     o = run(tmp_path, rows, settings)
@@ -134,3 +134,26 @@ def test_options_keep_their_text_when_shuffled(tmp_path):
     assert any([v for v, _ in i["choices"]] != sorted(v for v, _ in i["choices"]) for i in mcs(f))   # انخلطت
     o = run(tmp_path, bank(), {"shuffleOptions": False})
     assert all([v for v, _ in i["choices"]] == sorted(v for v, _ in i["choices"]) for i in mcs(o["forms"][0]))
+
+
+def test_six_versions_of_twenty_with_one_and_a_half_marks_out_of_thirty(tmp_path):
+    """طلب حقيقي: 6 نماذج × 20 سؤال من بنك 60، 3 ثوابت، 40 دقيقة، كل سؤال 1.5 والعلامة من 30"""
+    rows = bank(20, 20, 20); rows[26][10] = "نعم"; rows[21][10] = "نعم"; rows[43][10] = "نعم"      # ثوابت: صعب 27، وسط 22 و44
+    o = run(tmp_path, rows, {"hard": 6, "medium": 7, "easy": 7, "versions": 6, "questionMark": 1.5, "minutes": 40, "title": "امتحان"})
+    assert o["error"] is None and [f["title"][-2] for f in o["forms"]] == list("أبجدهو")
+    for f in o["forms"]:
+        ns = [int(re.search(r"\d+", i["title"]).group()) for i in mcs(f)]
+        assert len(ns) == 20 and {27, 22, 44} <= set(ns) and all(i["points"] == 3 for i in mcs(f))
+        assert "مدته 40 دقيقة" in f["description"] and "والعلامة من 30 (الفورم بيعرضها من 60، يعني مضروبة بـ 2)" in f["description"]
+
+
+def test_make_form_is_the_first_function_so_run_picks_it(tmp_path):
+    src = SCRIPT.read_text(encoding="utf-8")
+    assert re.findall(r"^function (\w+)", src, re.M)[0] == "makeForm"
+
+
+def test_google_rejecting_the_closed_message_does_not_stop_the_form(tmp_path):
+    """أول تشغيل حقيقي عند Google: setCustomClosedFormMessage رجّعت «Invalid data updating form» ووقّفت كل شي بعد أول نموذج"""
+    o = run(tmp_path, bank(), {"versions": 2}, rejectClosedMessage=True)
+    assert o["error"] is None and len(o["forms"]) == 2 and all(f["accepting"] is False and f["dest"] for f in o["forms"])
+    assert links(o)[2][1].startswith("https://forms.gle/")
