@@ -577,9 +577,9 @@ if os.path.exists(SUBS_FILE):
         try: r = json.loads(line); SUBS.setdefault(r["key"], r)
         except Exception: pass
 
-def bank_fp(ql=None):
+def bank_fp():
     """بصمة محتوى بنك الأسئلة (النصوص والخيارات والإجابات والمستويات): بتتغير بس لما يتغير محتوى ملف الأسئلة فعلاً، مش لما ينحفظ من جديد"""
-    return hashlib.sha256(json.dumps([[q["q"], q["o"], q["a"], q["level"]] for q in (QLIST if ql is None else ql)], ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(json.dumps([[q["q"], q["o"], q["a"], q["level"]] for q in QLIST], ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
 BANK_FP = bank_fp()
 def check_bank_change():
     """ملف أسئلة جديد والسيرفر لسا فيه أوراق/تسليمات امتحان سابق: لازم «بداية امتحان جديد» قبل ما يدخل الطلاب. بترجّع True لو STATE تغيّرت"""
@@ -840,32 +840,23 @@ def wrong_text(items):
         lines.append(f"س{w['n']} ({LVL.get(w['level'], '')}): {w['q']}  ← أجاب: {given}  |  الصحيح: {L[w['correct']]}) {w['o'][w['correct']]}")
     return noimg("\n".join(lines)) if lines else "— لا أخطاء —"
 
-def questions_on_disk_match():
-    """ملف الأسئلة على القرص هو نفسه بنك الامتحان الشغّال؟ لو المشرف بدّله قبل ضغطة «بداية امتحان جديد» الأرشيف ما لازم ياخد أسئلة امتحان ثاني"""
-    n0 = len(IMG_LIST)
-    try:
-        ql = load_questions()
-        if all(q["level"] == "" for q in ql):                    # نفس اللي بتعمله build_page لبنك بدون مستويات
-            for q in ql: q["level"] = "medium"
-        return bank_fp(ql) == (STATE.get("bank_fp") or BANK_FP)         # بصمة بنك الامتحان المحفوظة مع بياناته (بعد إعادة تشغيل بملف جديد بتختلف عن BANK_FP)
-    except Exception: return False
-    finally: del IMG_LIST[n0:]                                   # load_questions بتسجّل أسماء الصور بالقائمة العامة: نرجّعها زي ما كانت
 def safe_fn(s):
     """اسم ملف آمن على ويندوز من اسم طالب: الحروف والأرقام والمسافة والشرطة، وأي شي ثاني بيصير _"""
     return "".join(c if (c.isalnum() or c in " -") else "_" for c in s).strip(" _")[:50] or "x"
 ST_AR = {"done": "سلّم", "live": "بدأ ولم يسلّم", "lost": "بدأ ولم يسلّم", "none": "لم يبدأ"}
 def export_static(d, secs):
-    """نتائج جاهزة تنفتح بأي متصفح بدون Python ولا سيرفر: مجلد «نتائج» بالأرشيف فيه صفحة رئيسية (العلامات ومدة الحل)، وورقة كل طالب،
-    وورقات كل شعبة للطباعة، والتقرير وملف Excel، والأسئلة مع الإجابات. كلها من نفس دوال السيرفر (student_rows وsheet_html وreport_page
+    """نتائج جاهزة تنفتح بأي متصفح بدون Python ولا سيرفر: مجلد «نتائج» بالأرشيف لحاله (فيه صوره كمان، فبيتنقل أو بيتبعت كمجلد واحد): صفحة رئيسية (العلامات
+    ومدة الحل)، وورقة كل طالب، وورقات كل شعبة للطباعة، والتقرير وملف Excel، والأسئلة مع الإجابات. كلها من نفس دوال السيرفر (student_rows وsheet_html وreport_page
     وbuild_xlsx وkey_page) على بيانات الذاكرة، ونحط الشعب اللي امتحنت بس (نبدّل ROSTER مؤقتاً داخل القفل). بتنادى قبل تصفير الذاكرة"""
     global ROSTER
     root = os.path.join(d, "نتائج"); sheets = os.path.join(root, "ورقات"); home = "ابدأ_من_هنا.html"
     os.makedirs(sheets)
+    if os.path.isdir(IMG_DIR): shutil.copytree(IMG_DIR, os.path.join(root, "images"))
     saved = ROSTER
     ROSTER = {g: {s: ns for s, ns in ss.items() if (g, s) in secs} for g, ss in saved.items()}
     ROSTER = {g: ss for g, ss in ROSTER.items() if ss}
     try:
-        def put(path, h, depth):                                             # الصور: /img/اسم -> مسار نسبي لمجلد images اللي بالأرشيف
+        def put(path, h, depth):                                             # الصور: /img/اسم -> مسار نسبي لمجلد images اللي جوّا «نتائج» (depth = كم مستوى تحت «نتائج»)
             with open(path, "w", encoding="utf-8", newline="") as f: f.write(h.replace('"/img/', '"' + "../" * depth + "images/"))
         def nav(up): return f"<p class=noprint><a class=btn href='{up}{home}'>الرئيسية</a> <button class=btn onclick=print()>طباعة</button></p>"
         wo = "<style>.wo .q.good{display:none}</style>"
@@ -879,76 +870,46 @@ def export_static(d, secs):
             h += f"<h3>{html.escape(g)} — شعبة {html.escape(s)} ({len(dn)} سلّموا من {len(sec)})</h3>"
             if dn:
                 fn = f"الشعبة_{safe_fn(g)}_{safe_fn(s)}_كل_الورقات.html"
-                put(os.path.join(sheets, fn), CSS + SHEET_CSS + "<body>" + nav("../") + "".join(sheet_html(SUBS[r["key"]], False) for r in dn), 2)
+                put(os.path.join(sheets, fn), CSS + SHEET_CSS + "<body>" + nav("../") + "".join(sheet_html(SUBS[r["key"]], False) for r in dn), 1)
                 h += f"<p><a class=btn href='ورقات/{urllib.parse.quote(fn)}'>ورقات الشعبة كلها (للطباعة)</a></p>"
             h += "<table><tr><th>الاسم</th><th>الحالة</th><th>العلامة</th><th>مدة الحل</th><th>الخروج من الصفحة</th><th></th></tr>"
             for r in sec:
                 n += 1; link = ""
                 if r["status"] == "done":
                     fn = f"{n:03d}_{safe_fn(r['name'])}.html"
-                    put(os.path.join(sheets, fn), CSS + SHEET_CSS + wo + "<body>" + nav("../") + tog + sheet_html(SUBS[r["key"]], False), 2)
+                    put(os.path.join(sheets, fn), CSS + SHEET_CSS + wo + "<body>" + nav("../") + tog + sheet_html(SUBS[r["key"]], False), 1)
                     link = f"<a class=btn href='ورقات/{urllib.parse.quote(fn)}'>فتح الورقة</a>"
                 h += (f"<tr class={r['status']}><td>{html.escape(r['name'])}</td><td>{ST_AR[r['status']]}</td>"
                       f"<td>{'%s / %s' % (r['score'], r['total']) if r['status'] == 'done' else ''}</td><td>{html.escape(r.get('durtxt', ''))}</td>"
                       f"<td>{html.escape(str(r.get('leave', '')))}</td><td>{link}</td></tr>")
             h += "</table>"
-        put(os.path.join(root, home), h, 1)
+        put(os.path.join(root, home), h, 0)
         rp = report_page().replace("<a class=btn href=/monitor>المراقبة</a>", f"<a class=btn href='{home}'>الرئيسية</a>").replace("href=/report.xlsx", "href='report.xlsx'")
-        put(os.path.join(root, "التقرير.html"), rp, 1)
+        put(os.path.join(root, "التقرير.html"), rp, 0)
         with open(os.path.join(root, "report.xlsx"), "wb") as f: f.write(build_xlsx())
         kp = key_page().replace("<a class=btn href=/monitor>المراقبة</a>", f"<a class=btn href='{home}'>الرئيسية</a>").replace(" <a class=btn href=/logout>🔒 قفل</a>", "")
-        put(os.path.join(root, "الأسئلة_والإجابات.html"), kp, 1)
+        put(os.path.join(root, "الأسئلة_والإجابات.html"), kp, 0)
     finally:
         ROSTER = saved
-def export_viewer(d, keys):
-    """الأرشيف بيصير قابل للفتح عند الأستاذ لحاله، بطريقتين: (1) مجلد «نتائج» بصفحات HTML تنفتح بأي متصفح بدون برنامج (export_static)،
-    (2) نفس server.py وtemplate.html وstart.bat اللي شغّلوا الامتحان مع ملف الأسئلة والصور وsettings.txt وقائمة الطلاب للشعب اللي امتحنت بس،
-    للمراقبة الحية (بيحتاج Python). ما بنغيّر شي بالملفات. لو ما حدا بدأ ما بنعمل شي، ولو ملف الأسئلة اللي على القرص مش بنك هالامتحان ما بننسخه
-    (أحسن من أرشيف بأسئلة غلط) والنتائج الجاهزة بتنعمل من الذاكرة طالما بنك السيرفر هو بنك الامتحان. بترجّع True لو انجهز (2)"""
+def export_results(d, keys):
+    """كبسة «بداية امتحان جديد» بتحط بمجلد الأرشيف، غير ملفات البيانات، مجلد «نتائج» جاهز للأستاذ (export_static): بدون سيرفر ولا إعدادات ولا أسئلة ولا قائمة طلاب.
+    لو ما حدا بدأ ما بنعمل شي. ولو ما زبط (مثلاً السيرفر انشغّل من جديد على ملف أسئلة جديد: أسئلة الذاكرة مش أسئلة هالامتحان) بنكتب ملاحظة قصيرة
+    اقرأني.txt بالأرشيف تقول ليش (أحسن من صفحات بأسئلة غلط). بترجّع True لو انعمل المجلد"""
     secs = {tuple(k.rsplit("|", 3)[1:3]) for k in keys if isinstance(k, str) and k.count("|") >= 3}
     if not secs: return None
-    made, why, swhy = [], "", ""
+    why = ""
     try:
-        if not questions_on_disk_match():
-            why = "ملف الأسئلة اللي على القرص مختلف عن أسئلة هذا الامتحان (انبدّل قبل ضغطة «بداية امتحان جديد»)، فما انحفظ معه."
-        else:
-            for n in ("server.py", "template.html", "start.bat", "settings.txt"):
-                if os.path.isfile(os.path.join(BASE, n)): shutil.copy2(os.path.join(BASE, n), os.path.join(d, n)); made.append(os.path.join(d, n))
-            qf = find_file("questions"); shutil.copy2(qf, os.path.join(d, os.path.basename(qf))); made.append(os.path.join(d, os.path.basename(qf)))
-            if os.path.isdir(IMG_DIR): shutil.copytree(IMG_DIR, os.path.join(d, "images")); made.append(os.path.join(d, "images"))
-            mine = [(g, s, n) for g, ss in ROSTER.items() for s, ns in ss.items() if (g, s) in secs for n in ns]
-            codes = any(t in XCODES for t in mine)
-            rows = [["الصف", "الشعبة", "الاسم"] + (["الرمز"] if codes else [])] + [list(t) + ([XCODES.get(t, "")] if codes else []) for t in mine]
-            with open(os.path.join(d, "students.xlsx"), "wb") as f: f.write(xlsx_bytes([("الطلاب", [14, 10, 40, 12], rows)]))
-            made.append(os.path.join(d, "students.xlsx"))
+        if STATE.get("bank_changed"): why = "أسئلة السيرفر مش أسئلة هذا الامتحان (ملف الأسئلة انبدّل وانشغّل السيرفر من جديد)."
+        else: export_static(d, secs)
     except Exception as e:
-        why = f"تعذّر تجهيز الأرشيف للفتح: {e!r}"
-        for p in made: shutil.rmtree(p, ignore_errors=True) if os.path.isdir(p) else (os.remove(p) if os.path.exists(p) else None)
-    static_ok = False
-    try:
-        if STATE.get("bank_changed"): swhy = "أسئلة السيرفر مش أسئلة هذا الامتحان (ملف الأسئلة انبدّل وانشغّل السيرفر من جديد)."
-        else: export_static(d, secs); static_ok = True
-    except Exception as e:
-        swhy = f"تعذّر تجهيز النتائج الجاهزة: {e!r}"; shutil.rmtree(os.path.join(d, "نتائج"), ignore_errors=True)
-    head = [f"أرشيف امتحان: {SET['title']}   (انحفظ {time.strftime('%Y-%m-%d %H:%M')})", "=" * 40]
-    body = []
-    if static_ok:
-        body += ["هذا المجلد فيه نتائج الامتحان:", "",
-                 "1) بدون أي برنامج: افتح مجلد «نتائج» وادبل كليك على «ابدأ_من_هنا.html» (بيفتح بأي متصفح):",
-                 "   علامات الطلاب ومدة حل كل واحد، وورقة كل طالب، والتقرير وملف Excel، والأسئلة مع الإجابات."]
-    if not why:
-        body += ["" if static_ok else "هذا المجلد فيه نتائج الامتحان، وكل ما يلزم لفتحها على أي جهاز عليه Python:",
-                 ("2) " if static_ok else "1) ") + "للمراقبة الحية (بيحتاج Python): دبل كليك على start.bat (لو ما اشتغل: ثبّت Python من python.org وعلّم Add Python to PATH).",
-                 "   وبعدين افتح http://localhost/monitor ، ونفس الشي /report (التقرير) و /sheet (ورقات الطلاب) و /key (الأسئلة مع الإجابات).", "",
-                 "ملاحظات:", "- لا تشغّل start.bat على جهاز السيرفر وأنت بامتحان شغّال (نفس المنفذ).", "- قائمة الطلاب هنا للشعب اللي امتحنت فقط.", "- لا تغيّر الملفات."]
-    else:
-        body += ["", "ما انحفظ ما يلزم للمراقبة الحية (start.bat): " + why]
-    if swhy: body += ["", "ما انحفظت النتائج الجاهزة: " + swhy]
-    if not static_ok and why: body = ["هذا المجلد فيه بيانات الامتحان (التسليمات والأوراق)، لكن ما انحفظ معه ما يلزم لفتحه:", why, "", "ما انحفظت النتائج الجاهزة: " + swhy]
-    try:
-        with open(os.path.join(d, "اقرأني.txt"), "w", encoding="utf-8-sig", newline="") as f: f.write("".join(x + chr(13) + chr(10) for x in head + body))
-    except OSError: pass
-    if why or swhy: print("تنبيه:", why, swhy)
+        why = f"تعذّر تجهيز النتائج: {e!r}"; shutil.rmtree(os.path.join(d, "نتائج"), ignore_errors=True)
+    if why:
+        try:
+            with open(os.path.join(d, "اقرأني.txt"), "w", encoding="utf-8-sig", newline="") as f:
+                f.write("".join(x + chr(13) + chr(10) for x in [f"أرشيف امتحان: {SET['title']}   (انحفظ {time.strftime('%Y-%m-%d %H:%M')})", "=" * 40,
+                                                                  "هذا المجلد فيه بيانات الامتحان بس، وما انعمل مجلد «نتائج» لأن:", why]))
+        except OSError: pass
+        print("تنبيه:", why)
     return not why
 def archive_all():
     """بداية امتحان جديد: نحفظ كل الملفات القديمة بمجلد أرشيف ونصفّر الحجوزات"""
@@ -963,8 +924,8 @@ def archive_all():
         if os.path.exists(f): shutil.move(f, os.path.join(d, os.path.basename(f)))
     if os.path.exists(OUT):                      # ننسخ (مش ننقل) لأنه ممكن يكون مفتوح بـ Excel
         shutil.copy2(OUT, os.path.join(d, os.path.basename(OUT)))
-    try: export_viewer(d, keys)
-    except Exception as e: print("تنبيه: تعذّر تجهيز الأرشيف للفتح:", repr(e))            # الأرشفة نفسها (نقل الملفات) ما لازم تفشل بسبب هاي الإضافة
+    try: export_results(d, keys)
+    except Exception as e: print("تنبيه: تعذّر تجهيز مجلد النتائج:", repr(e))            # الأرشفة نفسها (نقل الملفات) ما لازم تفشل بسبب هاي الإضافة
     CLAIMS.clear(); LIVE.clear(); SUBS.clear(); PAPERS.clear(); ANS.clear(); ANS_DIRTY[0] = False
     reh_reset()                                  # أي بروفة كانت شغّالة بتنتهي مع الامتحان القديم
     STATE["bank_fp"] = BANK_FP; STATE.pop("bank_changed", None)
