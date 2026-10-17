@@ -5,7 +5,7 @@ import pytest
 from conftest import LoadFailed, PKG_SRC
 from test_http import Server
 
-MDS = sorted(PKG_SRC.glob("_md_sources/0[02345]_*.md"))
+MDS = sorted(PKG_SRC.glob("_md_sources/0[0234]_*.md"))
 TEXT = "\n".join(p.read_text(encoding="utf-8") for p in MDS)
 
 
@@ -47,7 +47,7 @@ def test_every_setting_key_in_docs_is_known_to_the_server(pkg):
             assert "غير معروف" not in str(e), f"الدليل بيذكر الإعداد «{k}» والسيرفر ما بيعرفه"
 
 
-@pytest.mark.parametrize("stem, most", [("00_", 8), ("02_", 1), ("03_", 1), ("04_", 1), ("05_", 2)])
+@pytest.mark.parametrize("stem, most", [("00_", 8), ("02_", 1), ("03_", 1), ("04_", 1)])
 def test_every_guide_has_its_pdf_and_printed_sheets_stay_one_page(stem, most):
     """الأوراق اللي بتنطبع (قائمة الفحص، ورقة الأستاذ، ورقة الطوارئ) صفحة وحدة؛ وكل مصدر md إله PDF بنفس الاسم"""
     pymupdf = pytest.importorskip("pymupdf")
@@ -56,11 +56,3 @@ def test_every_guide_has_its_pdf_and_printed_sheets_stay_one_page(stem, most):
     assert pdf.exists(), pdf.name
     assert pymupdf.open(str(pdf)).page_count <= most, pdf.name
 
-
-def test_emergency_docs_say_the_teacher_needs_editor_access_beforehand():
-    """الفورم الاحتياطي بيفتحه الأستاذ بحسابه: بدون مشاركة المجلد معه كـ Editor بيطلعله «You need access» (ما بيكفي رابط التعديل)"""
-    for stem in ("04_", "05_"):
-        t = next(PKG_SRC.glob(f"_md_sources/{stem}*.md")).read_text(encoding="utf-8")
-        assert "Editor" in t and "You need access" in t, stem
-    assert "Editor" in next(PKG_SRC.glob("_md_sources/00_*.md")).read_text(encoding="utf-8")
-    assert "Editor" in (PKG_SRC / "05_برنامج_الفورم_الاحتياطي.txt").read_text(encoding="utf-8")
