@@ -577,9 +577,9 @@ if os.path.exists(SUBS_FILE):
         try: r = json.loads(line); SUBS.setdefault(r["key"], r)
         except Exception: pass
 
-def bank_fp():
+def bank_fp(ql=None):
     """بصمة محتوى بنك الأسئلة (النصوص والخيارات والإجابات والمستويات): بتتغير بس لما يتغير محتوى ملف الأسئلة فعلاً، مش لما ينحفظ من جديد"""
-    return hashlib.sha256(json.dumps([[q["q"], q["o"], q["a"], q["level"]] for q in QLIST], ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(json.dumps([[q["q"], q["o"], q["a"], q["level"]] for q in (QLIST if ql is None else ql)], ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
 BANK_FP = bank_fp()
 def check_bank_change():
     """ملف أسئلة جديد والسيرفر لسا فيه أوراق/تسليمات امتحان سابق: لازم «بداية امتحان جديد» قبل ما يدخل الطلاب. بترجّع True لو STATE تغيّرت"""
@@ -840,10 +840,57 @@ def wrong_text(items):
         lines.append(f"س{w['n']} ({LVL.get(w['level'], '')}): {w['q']}  ← أجاب: {given}  |  الصحيح: {L[w['correct']]}) {w['o'][w['correct']]}")
     return noimg("\n".join(lines)) if lines else "— لا أخطاء —"
 
+def questions_on_disk_match():
+    """ملف الأسئلة على القرص هو نفسه بنك الامتحان الشغّال؟ لو المشرف بدّله قبل ضغطة «بداية امتحان جديد» الأرشيف ما لازم ياخد أسئلة امتحان ثاني"""
+    n0 = len(IMG_LIST)
+    try:
+        ql = load_questions()
+        if all(q["level"] == "" for q in ql):                    # نفس اللي بتعمله build_page لبنك بدون مستويات
+            for q in ql: q["level"] = "medium"
+        return bank_fp(ql) == (STATE.get("bank_fp") or BANK_FP)         # بصمة بنك الامتحان المحفوظة مع بياناته (بعد إعادة تشغيل بملف جديد بتختلف عن BANK_FP)
+    except Exception: return False
+    finally: del IMG_LIST[n0:]                                   # load_questions بتسجّل أسماء الصور بالقائمة العامة: نرجّعها زي ما كانت
+def export_viewer(d, keys):
+    """الأرشيف بيصير قابل للفتح لحاله عند الأستاذ: بنحط فيه نفس server.py وtemplate.html وstart.bat اللي شغّلوا الامتحان مع ملف الأسئلة والصور والإعدادات،
+    وقائمة الطلاب للشعب اللي امتحنت بس. ما بنغيّر شي بالملفات: بيدبل كليك على start.bat وبيفتح المراقبة والتقرير وورقات الطلاب والمفتاح.
+    لو ما حدا بدأ ما بنعمل شي، ولو ملف الأسئلة اللي على القرص مش بنك هالامتحان بنكتفي بملاحظة (أحسن من أرشيف بأسئلة غلط). بترجّع True لو انجهز"""
+    secs = {tuple(k.rsplit("|", 3)[1:3]) for k in keys if isinstance(k, str) and k.count("|") >= 3}
+    if not secs: return None
+    made, why = [], ""
+    try:
+        if not questions_on_disk_match():
+            why = "ملف الأسئلة اللي على القرص مختلف عن أسئلة هذا الامتحان (انبدّل قبل ضغطة «بداية امتحان جديد»)، فما انحفظ معه."
+        else:
+            for n in ("server.py", "template.html", "start.bat", "settings.txt"):
+                if os.path.isfile(os.path.join(BASE, n)): shutil.copy2(os.path.join(BASE, n), os.path.join(d, n)); made.append(os.path.join(d, n))
+            qf = find_file("questions"); shutil.copy2(qf, os.path.join(d, os.path.basename(qf))); made.append(os.path.join(d, os.path.basename(qf)))
+            if os.path.isdir(IMG_DIR): shutil.copytree(IMG_DIR, os.path.join(d, "images")); made.append(os.path.join(d, "images"))
+            mine = [(g, s, n) for g, ss in ROSTER.items() for s, ns in ss.items() if (g, s) in secs for n in ns]
+            codes = any(t in XCODES for t in mine)
+            rows = [["الصف", "الشعبة", "الاسم"] + (["الرمز"] if codes else [])] + [list(t) + ([XCODES.get(t, "")] if codes else []) for t in mine]
+            with open(os.path.join(d, "students.xlsx"), "wb") as f: f.write(xlsx_bytes([("الطلاب", [14, 10, 40, 12], rows)]))
+            made.append(os.path.join(d, "students.xlsx"))
+    except Exception as e:
+        why = f"تعذّر تجهيز الأرشيف للفتح: {e!r}"
+        for p in made: shutil.rmtree(p, ignore_errors=True) if os.path.isdir(p) else (os.remove(p) if os.path.exists(p) else None)
+    if why:
+        body = ["هذا المجلد فيه بيانات الامتحان (التسليمات والأوراق)، لكن ما انحفظ معه ما يلزم لفتحه:", why]
+    else:
+        body = ["هذا المجلد فيه نتائج الامتحان، وكل ما يلزم لفتحها على أي جهاز عليه Python:",
+                "1) دبل كليك على start.bat (لو ما اشتغل: ثبّت Python من python.org وعلّم Add Python to PATH).",
+                "2) افتح http://localhost/monitor : المراقبة والنتائج. ونفس الشي /report (التقرير) و /sheet (ورقات الطلاب) و /key (الأسئلة مع الإجابات).", "",
+                "ملاحظات:", "- لا تشغّله على جهاز السيرفر وأنت بامتحان شغّال (نفس المنفذ).", "- قائمة الطلاب هنا للشعب اللي امتحنت فقط.", "- لا تغيّر الملفات."]
+    head = [f"أرشيف امتحان: {SET['title']}   (انحفظ {time.strftime('%Y-%m-%d %H:%M')})", "=" * 40]
+    try:
+        with open(os.path.join(d, "اقرأني.txt"), "w", encoding="utf-8-sig", newline="") as f: f.write("".join(x + chr(13) + chr(10) for x in head + body))
+    except OSError: pass
+    if why: print("تنبيه:", why)
+    return not why
 def archive_all():
     """بداية امتحان جديد: نحفظ كل الملفات القديمة بمجلد أرشيف ونصفّر الحجوزات"""
     d = os.path.join(BASE, "archive_" + time.strftime("%Y%m%d_%H%M%S"))
     os.makedirs(d, exist_ok=True)
+    keys = set(PAPERS) | set(SUBS) | set(CLAIMS)
     STATE.update(closed_at=0, msg={"id": 0, "text": ""}); STATE.pop("comp", None); STATE.pop("auto_title", None)
     if ANS_DIRTY[0]:                             # آخر إجابات لسا ما انحفظت: نكتبها قبل ما ننقل الملف للأرشيف (هذه الدالة تُستدعى داخل القفل)
         try: atomic_write(ANS_FILE, json.dumps(ANS, ensure_ascii=False))
@@ -852,6 +899,8 @@ def archive_all():
         if os.path.exists(f): shutil.move(f, os.path.join(d, os.path.basename(f)))
     if os.path.exists(OUT):                      # ننسخ (مش ننقل) لأنه ممكن يكون مفتوح بـ Excel
         shutil.copy2(OUT, os.path.join(d, os.path.basename(OUT)))
+    try: export_viewer(d, keys)
+    except Exception as e: print("تنبيه: تعذّر تجهيز الأرشيف للفتح:", repr(e))            # الأرشفة نفسها (نقل الملفات) ما لازم تفشل بسبب هاي الإضافة
     CLAIMS.clear(); LIVE.clear(); SUBS.clear(); PAPERS.clear(); ANS.clear(); ANS_DIRTY[0] = False
     reh_reset()                                  # أي بروفة كانت شغّالة بتنتهي مع الامتحان القديم
     STATE["bank_fp"] = BANK_FP; STATE.pop("bank_changed", None)
