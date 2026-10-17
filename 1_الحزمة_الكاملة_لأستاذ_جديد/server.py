@@ -356,6 +356,10 @@ def qhtml(text):
     if re.search("[؀-ۿ]", text):
         h = _ISO.sub(lambda m: "⁦<x-m>" + m.group(1) + "</x-m>⁩" if any(c in m.group(1) for c in _MATH_OPS) else m.group(0), h)
     return imgify(h)
+def bdir(text):
+    """اتجاه نص السؤال/الخيار بصفحات السيرفر: فيه حرف عربي (خارج المقاطع الرياضية المعزولة) ← rtl، وغيره auto.
+    dir=auto لوحده بيقرأ أول حرف قوي: خيار بيبدأ بـ f(x) وبعده جملة عربية كان يطلع LTR وتنقلب كلماته"""
+    return "rtl" if re.search("[؀-ۿ]", _ISO.sub("", text)) else "auto"
 FRAC_CSS = ("x-fr{display:inline-flex;flex-direction:column;align-items:stretch;vertical-align:middle;direction:ltr;unicode-bidi:isolate;"
             "margin:0 .12em;font-size:.92em;line-height:1.25;text-align:center}x-fr x-fr{font-size:1em}"
             "x-n,x-d{display:block;padding:0 .2em;white-space:nowrap}x-d{border-top:.09em solid currentColor}"
@@ -1302,11 +1306,11 @@ def sheet_html(sub, wrong_only):
     for i, (n, v) in enumerate(zip(sub["ids"], sub["answers"]), 1):
         q = BANK[n]; right = v == q["a"]
         if wrong_only and right: continue
-        h += f"<div class='q {'good' if right else 'bad'}'><div><b>{i}. (س{n} — {LVL.get(q['level'], '')} — {mtxt(eff_mark(q['marks'], sub['ids']))})</b> {'✓' if right else '✗'} <span dir=auto>{qhtml(q['q'])}</span></div>"
+        h += f"<div class='q {'good' if right else 'bad'}'><div><b>{i}. (س{n} — {LVL.get(q['level'], '')} — {mtxt(eff_mark(q['marks'], sub['ids']))})</b> {'✓' if right else '✗'} <span dir={bdir(q['q'])}>{qhtml(q['q'])}</span></div>"
         for j, o in enumerate(q["o"]):
             c = "o" + (" right" if j == q["a"] else "") + (" given" if j == v else "") + (" wrongc" if j == v and not right else "")
             mark = (" ← إجابة الطالب" if j == v else "") + (" ✓ الصحيحة" if j == q["a"] else "")
-            h += f"<div class='{c}'>{L[j]}) <span dir=auto>{qhtml(o)}</span><small>{mark}</small></div>"
+            h += f"<div class='{c}'>{L[j]}) <span dir={bdir(o)}>{qhtml(o)}</span><small>{mark}</small></div>"
         if v < 0: h += "<div class=o style='color:#b3261e'>لم يجب</div>"
         h += "</div>"
     return h + "</div>"
@@ -1350,8 +1354,8 @@ def key_page():
         if not qs: continue
         h += f"<h3>{LVL[lv]} ({len(qs)})</h3>"
         for q in qs:
-            h += f"<div class='q'><b>س{q['n']}</b> <small>(سطر {q['row']} بالملف{' — ' + html.escape(str(q['page'])) if q['page'] else ''} — {mtxt(key_mark(q['marks']))})</small> <span dir=auto>{qhtml(q['q'])}</span>"
-            for j, o in enumerate(q["o"]): h += f"<div class='o{' right' if j == q['a'] else ''}'>{L[j]}) <span dir=auto>{qhtml(o)}</span>{' ✓' if j == q['a'] else ''}</div>"
+            h += f"<div class='q'><b>س{q['n']}</b> <small>(سطر {q['row']} بالملف{' — ' + html.escape(str(q['page'])) if q['page'] else ''} — {mtxt(key_mark(q['marks']))})</small> <span dir={bdir(q['q'])}>{qhtml(q['q'])}</span>"
+            for j, o in enumerate(q["o"]): h += f"<div class='o{' right' if j == q['a'] else ''}'>{L[j]}) <span dir={bdir(o)}>{qhtml(o)}</span>{' ✓' if j == q['a'] else ''}</div>"
             if q["sol"]: h += f"<div class=o><small>الحل: {html.escape(q['sol'])}</small></div>"
             h += "</div>"
     return h

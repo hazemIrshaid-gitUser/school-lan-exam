@@ -384,6 +384,8 @@ const ROSTER = /*ROSTER*/{};
 /* ========================================================= */
 
 const $=id=>document.getElementById(id);
+/* اتجاه نص السؤال/الخيار: فيه حرف عربي خارج المقاطع الرياضية المعزولة ← rtl، وغيره auto (dir=auto لوحده بيقرأ أول حرف قوي فخيار بيبدأ بـ f(x) وبعده جملة عربية كان ينقلب) */
+const D=t=>/[؀-ۿ]/.test(String(t).replace(/⁦[^⁩]*⁩/g,'').replace(/<[^>]*>/g,''))?'rtl':'auto';
 const shuffle=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
 $('title').textContent=CONFIG.examTitle;
@@ -424,7 +426,7 @@ async function srv(path,body){try{const r=await fetch(path,{method:'POST',header
 function previewReview(ans){
   const AL='أبجد',wrong=paper.map((q,i)=>({q,v:ans[i]})).filter(x=>x.v!==x.q.a);
   const opt=(q,j)=>j<0?'لم تجب':`${AL[j]}) ${QUESTIONS[q.id].o[j]}`;
-  $('review').innerHTML=wrong.length?'<h2 style="margin-top:18px">الأسئلة الخاطئة ('+wrong.length+')</h2>'+wrong.map(x=>`<div class="rv" dir="auto"><div>س${x.q.n}: ${x.q.q}</div><div class="no">إجابتك: ${opt(x.q,x.v)}</div><div class="ok">الصحيحة: ${opt(x.q,x.q.a)}</div></div>`).join(''):'<p class="mut">لا توجد أخطاء</p>';
+  $('review').innerHTML=wrong.length?'<h2 style="margin-top:18px">الأسئلة الخاطئة ('+wrong.length+')</h2>'+wrong.map(x=>`<div class="rv" dir="${D(x.q.q)}"><div>س${x.q.n}: ${x.q.q}</div><div class="no">إجابتك: ${opt(x.q,x.v)}</div><div class="ok">الصحيحة: ${opt(x.q,x.q.a)}</div></div>`).join(''):'<p class="mut">لا توجد أخطاء</p>';
 }
 async function loadReview(){
   if(CONFIG.reviewMode==='no'||!CONFIG.reviewMode)return;
@@ -433,7 +435,7 @@ async function loadReview(){
   if(P.status!=='ok')return;
   const AL='أبجد',opt=(q,j)=>j<0?'لم تجب':`${AL[j]}) ${q.o[j]}`;
   $('review').innerHTML=P.items.length?'<h2 style="margin-top:18px">مراجعة الأسئلة الخاطئة</h2>'+P.items.map(it=>{const q=it.q!==undefined?it:QUESTIONS.find(x=>x.n===it.n);
-    return `<div class="rv" dir="auto"><div>${q.q}</div><div class="no">إجابتك: ${opt(q,it.given)}</div><div class="ok">الصحيحة: ${opt(q,it.correct)}</div></div>`}).join(''):'<p class="mut">لا توجد أخطاء، أحسنت!</p>';
+    return `<div class="rv" dir="${D(q.q)}"><div>${q.q}</div><div class="no">إجابتك: ${opt(q,it.given)}</div><div class="ok">الصحيحة: ${opt(q,it.correct)}</div></div>`}).join(''):'<p class="mut">لا توجد أخطاء، أحسنت!</p>';
 }
 const MK='msg|'+CONFIG.examTitle;
 function showMsg(m){if(!m||!m.id||!m.text||finished)return;if(+store.get(MK)>=m.id)return;store.set(MK,String(m.id));$('noticeText').textContent='📢 '+m.text;$('notice').classList.remove('hide')}
@@ -515,8 +517,8 @@ function render(ans,current=0){
   const effMark=q=>{const m=QUESTIONS[q.id].marks;if(m===undefined||!CONFIG.finalMark)return m;const W=paper.reduce((a,x)=>a+QUESTIONS[x.id].marks,0);return Math.round(m*CONFIG.finalMark/W*100)/100};   /* العلامة الفعلية لو في علامة نهائية */
   const mkTxt=m=>m===2?'علامتان':(Number.isInteger(m)&&m>=3&&m<=10?m+' علامات':m+' علامة');
   /* dir="auto": الاتجاه يتحدد من لغة السؤال (عربي ← يمين، إنجليزي ← يسار) فتصلح المواد الإنجليزية والمختلطة */
-  $('qs').innerHTML=paper.map((q,n)=>{const mk=effMark(q);return `<div class="card" dir="auto"><div class="q">${n+1}. ${q.q}${mk!==undefined&&mk!==1?`<span class="mk" dir="rtl">(${mkTxt(mk)})</span>`:''}</div>`+
-    q.o.map(o=>`<label class="opt"><input type="radio" name="q${q.id}" value="${o.j}"${ans[q.id]===o.j?' checked':''}><span dir="auto">${o.t}</span></label>`).join('')+`</div>`}).join('');
+  $('qs').innerHTML=paper.map((q,n)=>{const mk=effMark(q);return `<div class="card" dir="${D(q.q)}"><div class="q">${n+1}. ${q.q}${mk!==undefined&&mk!==1?`<span class="mk" dir="rtl">(${mkTxt(mk)})</span>`:''}</div>`+
+    q.o.map(o=>`<label class="opt"><input type="radio" name="q${q.id}" value="${o.j}"${ans[q.id]===o.j?' checked':''}><span dir="${D(o.t)}">${o.t}</span></label>`).join('')+`</div>`}).join('');
   currentQuestion=Math.max(0,Math.min(Math.floor(Number(current)||0),Math.max(0,paper.length-1)));
   buildQuestionMap();
   $('qs').onchange=()=>{updateQuestionMap();saveState();if(CONFIG.serverGrading){clearTimeout(pingT);pingT=setTimeout(ping,1500)}};   /* كل تغيير بالإجابة ينحفظ بالسيرفر خلال ثانيتين */
