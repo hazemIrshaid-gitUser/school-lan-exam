@@ -58,7 +58,7 @@ MAX_BODY = 1_000_000                                # أكبر جسم طلب م�
 GRACE = 30                                          # ثواني سماح بعد انتهاء الوقت قبل ما نعلّم التسليم "متأخر"
 L = "أبجدهوزحطي"
 LVL = {"hard": "صعب", "medium": "وسط", "easy": "سهل"}
-HEAD = ["الاختبار","الصف","الشعبة","الاسم","العلامة","من","الأسئلة الخاطئة وإجابة الطالب","نوع التسليم","الوقت","الخروج من الصفحة","التأخير (ث)"]
+HEAD = ["الاختبار","الصف","الشعبة","الاسم","العلامة","من","الأسئلة الخاطئة وإجابة الطالب","نوع التسليم","الوقت","الخروج من الصفحة","التأخير (ث)","مدة الحل"]
 
 def mtxt(m):
     """علامة السؤال بصياغة عربية سليمة: علامة واحدة / علامتان / 3 علامات / 2.5 علامة"""
@@ -709,6 +709,12 @@ def deadline(k):
     p = PAPERS[k]; d = p["start"] + SET["minutes"] * 60 + p.get("extra", 0)
     return min(d, STATE["closed_at"]) if STATE["closed_at"] else d
 def remain_of(k): return max(0, int(deadline(k) - time.time()))
+def fmt_dur(s):
+    """مدة الحل للعرض: 45 ث، 23 د 41 ث، 1 س 05 د 10 ث. فاضية لو ما انسجّلت (تسليم قبل الميزة، أو تسليم من المعلم).
+    نص عربي وليس 23:41 لأن Excel بيقرأ هاي الصيغة كساعة من اليوم"""
+    if not isinstance(s, (int, float)) or isinstance(s, bool) or s < 0: return ""
+    s = int(s); h, m, sec = s // 3600, s % 3600 // 60, s % 60
+    return f"{h} س {m:02d} د {sec:02d} ث" if h else (f"{m} د {sec:02d} ث" if m else f"{sec} ث")
 def pub_q(n):
     """السؤال زي ما بينعرض للطالب: النص والخيارات والعلامة بس (بدون الإجابة الصحيحة والحل والمستوى والمرجع)"""
     q = BANK[n]
@@ -783,7 +789,7 @@ def compensate_downtime(last=None, why="restart"):
     else:
         for k, p in PAPERS.items():
             if k in SUBS or "frozen" in p or deadline(k) <= last: continue
-            p["extra"] = p.get("extra", 0) + int(down); rec["students"] += 1
+            p["extra"] = p.get("extra", 0) + int(down); p["down"] = p.get("down", 0) + int(down); rec["students"] += 1       # down: وقت التوقف بنطرحه من مدة الحل
         if rec["students"]: save_papers()
     STATE["comp"] = rec; save_state()
     print(f"تعويض التوقف: {'جهاز السيرفر نام أو تجمّد' if why == 'sleep' else 'السيرفر كان متوقفاً'} {int(down)} ثانية — " + ("التعويض مطفّأ بالإعدادات" if rec.get("off") else "أطول من 30 دقيقة: ما عوّضنا تلقائياً" if rec.get("skipped") else f"مدّدنا وقت {rec['students']} طالب"))
@@ -816,7 +822,7 @@ def write_results_csv():
     buf = io.StringIO(); w = csv.writer(buf); w.writerow(HEAD)
     for rec in SUBS.values():
         w.writerow([rec["exam"], rec["grade"], rec["section"], rec["name"], rec["score"], rec["total"],
-                    wrong_text(wrong_items(rec["ids"], rec["answers"])), rec.get("auto", ""), rec.get("time", ""), rec.get("leave", ""), rec.get("late", 0)])
+                    wrong_text(wrong_items(rec["ids"], rec["answers"])), rec.get("auto", ""), rec.get("time", ""), rec.get("leave", ""), rec.get("late", 0), fmt_dur(rec.get("dur"))])
     try: atomic_write(OUT, "﻿" + buf.getvalue(), tries=2)          # مفتوح بـ Excel = ممسوك طول الوقت: ما نستنّى عليه مع كل تسليم
     except OSError as e: print("تنبيه: تعذّر تحديث results.csv (مفتوح بـ Excel؟) — التسليمات محفوظة بـ submissions.jsonl:", e)
 
@@ -958,7 +964,7 @@ def student_rows():
             for n in names:
                 k = idx.get((g, s, n)); r = {"grade": g, "section": s, "name": n, "key": k, "status": "none"}
                 if k in SUBS:
-                    sub = SUBS[k]; r.update(status="done", score=sub["score"], total=sub["total"], leave=sub.get("leave", ""), late=sub.get("late", 0))
+                    sub = SUBS[k]; r.update(status="done", score=sub["score"], total=sub["total"], leave=sub.get("leave", ""), late=sub.get("late", 0), durtxt=fmt_dur(sub.get("dur")))
                 elif k in CLAIMS:
                     lv = LIVE.get(k)
                     if lv:
@@ -1037,11 +1043,11 @@ def build_xlsx():
     sheets.append(("ملخص", [10, 10, 12, 12, 14, 12, 12], [["الصف", "الشعبة", "عدد الطلاب", "سلّموا", "المتوسط %", "الأعلى %", "الأقل %"]] + [[r["grade"], r["section"], r["students"], r["submitted"], r["avg"] if r["avg"] is not None else "", r["max"] if r["max"] is not None else "", r["min"] if r["min"] is not None else ""] for r in ss]))
     rows = student_rows()
     for (g, s) in sorted({(r["grade"], r["section"]) for r in rows}):
-        sh = [["م", "الاسم", "العلامة", "من", "النسبة %", "الحالة", "الخروج من الصفحة", "التأخير (ث)"]]
+        sh = [["م", "الاسم", "العلامة", "من", "النسبة %", "الحالة", "الخروج من الصفحة", "التأخير (ث)", "مدة الحل"]]
         for i, r in enumerate([r for r in rows if r["grade"] == g and r["section"] == s], 1):
-            if r["status"] == "done": sh.append([i, r["name"], r["score"], r["total"], round(100 * r["score"] / r["total"]) if r["total"] else 0, st["done"], r["leave"], r["late"] or ""])
-            else: sh.append([i, r["name"], "", "", "", st[r["status"]], "", ""])
-        sheets.append((f"الشعبة {s}", [5, 40, 10, 8, 12, 16, 22, 12], sh))
+            if r["status"] == "done": sh.append([i, r["name"], r["score"], r["total"], round(100 * r["score"] / r["total"]) if r["total"] else 0, st["done"], r["leave"], r["late"] or "", r["durtxt"]])
+            else: sh.append([i, r["name"], "", "", "", st[r["status"]], "", "", ""])
+        sheets.append((f"الشعبة {s}", [5, 40, 10, 8, 12, 16, 22, 12, 16], sh))
     qs = sorted(question_stats(), key=lambda r: (r["pct"] is None, r["pct"] if r["pct"] is not None else 0))
     sheets.append(("تحليل الأسئلة", [8, 10, 10, 12, 14, 50, 45], [["السؤال", "المستوى", "الصفحة", "مرات الظهور", "نسبة الصح %", "أكثر إجابة خاطئة (العدد)", "ملاحظة"]] + [[r["n"], LVL.get(r["level"], ""), r["page"], r["appeared"], r["pct"] if r["pct"] is not None else "", r["top_wrong"], r["note"]] for r in qs]))
     return xlsx_bytes(sheets)
@@ -1157,7 +1163,7 @@ function draw(){
    let act='';
    if(r.status==='done')act=`<a class="btn o" target=_blank href="/sheet?key=${kk}">فتح الورقة</a>`;
    else if(r.status==='live'||r.status==='lost')act=`<a class="btn o" href="#" onclick="ext('student',decodeURIComponent('${kk}'));return false">+ وقت</a> <a class="btn o" href="#" onclick="mv('${kk}');return false" title="يكمل بنفس الأسئلة والإجابات والوقت المتبقي من جهاز آخر">نقل لجهاز آخر</a> <a class="btn o" href="#" onclick="sub('${kk}');return false" title="يصحّح إجاباته المحفوظة على السيرفر ويسجّلها كتسليم">تسليم عنه</a> <a class="btn r" href="#" onclick="releaseSt('${kk}');return false" title="للسماح للطالب بالبدء من جهاز آخر">فك الحجز</a>`;
-   h+=`<tr class=${cl}><td>${esc(r.name)}</td><td><span class="badge ${cl}">${ST[r.status]}</span>${r.status==='lost'&&r.ago!=null?` <span class=mut>منذ ${r.ago} ث</span>`:''}</td><td>${prog}</td><td>${r.status==='live'?fmt(r.remain):''}</td><td>${lvv}</td><td>${r.status==='done'?`<span class=score>${r.score} / ${r.total}</span>`:''}</td><td>${act}</td></tr>`;
+   h+=`<tr class=${cl}><td>${esc(r.name)}</td><td><span class="badge ${cl}">${ST[r.status]}</span>${r.status==='lost'&&r.ago!=null?` <span class=mut>منذ ${r.ago} ث</span>`:''}</td><td>${prog}</td><td>${r.status==='live'?fmt(r.remain):(r.status==='done'&&r.durtxt?`<span class=mut>استغرق ${esc(r.durtxt)}</span>`:'')}</td><td>${lvv}</td><td>${r.status==='done'?`<span class=score>${r.score} / ${r.total}</span>`:''}</td><td>${act}</td></tr>`;
   }
   h+=rows.length?'</table>':'</table><div class=empty>لا نتائج</div>';h+='</details>';
  }
@@ -1302,6 +1308,7 @@ SHEET_CSS = "<style>" + FRAC_CSS + ".q{border:1px solid #bbb;border-radius:6px;p
 def sheet_html(sub, wrong_only):
     ok = sub["score"]; tot = sub["total"]
     late_txt = f" &nbsp; <b style='color:#b3261e'>تسليم متأخر:</b> {sub['late']} ث" if sub.get("late") else ""
+    if fmt_dur(sub.get("dur")): late_txt = f" &nbsp; <b>مدة الحل:</b> {fmt_dur(sub['dur'])}" + late_txt
     h = f"<div class=pg><div class=hd><h2 style='margin:4px 0'>{html.escape(sub['exam'])}</h2><b>الاسم:</b> {html.escape(sub['name'])} &nbsp; <b>الصف:</b> {html.escape(sub['grade'])} &nbsp; <b>الشعبة:</b> {html.escape(sub['section'])} &nbsp; <b>العلامة:</b> <span dir=ltr>{ok} / {tot}</span> &nbsp; <b>الخروج من الصفحة:</b> {html.escape(str(sub.get('leave','')))}{late_txt}</div>"
     for i, (n, v) in enumerate(zip(sub["ids"], sub["answers"]), 1):
         q = BANK[n]; right = v == q["a"]
@@ -1575,7 +1582,8 @@ class H(http.server.BaseHTTPRequestHandler):
             else: score, total = num(got), num(W)
             rec = {"key": k, "exam": SET["title"], "grade": who[0], "section": who[1], "name": who[2], "ids": ids, "answers": answers,
                    "score": score, "total": total, "auto": str(d.get("auto", ""))[:40], "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                   "leave": str(d.get("leave", ""))[:60], "late": over if over > GRACE else 0}
+                   "leave": str(d.get("leave", ""))[:60], "late": over if over > GRACE else 0,
+                   "dur": max(0, int(now - p["start"] - p.get("down", 0)))}                 # مدة الحل: من «ابدأ» لـ «تسليم» بساعة السيرفر، بدون وقت توقف السيرفر
             try:
                 with open(SUBS_FILE, "a", encoding="utf-8") as f: f.write(json.dumps(rec, ensure_ascii=False) + "\n"); f.flush(); os.fsync(f.fileno())
             except OSError as e:

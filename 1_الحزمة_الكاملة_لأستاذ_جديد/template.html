@@ -53,6 +53,7 @@ button{cursor:pointer}
 }
 #who{display:block;flex:1 1 auto;min-width:0;max-width:68%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;font-weight:750}
 .bar>span:last-child{display:flex;align-items:center;flex:0 0 auto;font-size:13px;font-weight:700;white-space:nowrap}
+#clock.low{background:#c62828;color:#fff}   /* آخر دقيقة: العدّاد أحمر */
 #clock{display:inline-block;min-width:5ch;margin-inline-start:8px;padding:4px 10px;border-radius:9px;background:rgba(0,0,0,.2);direction:ltr;text-align:center;font-size:clamp(21px,5.5vw,26px);font-variant-numeric:tabular-nums;line-height:1.15;letter-spacing:.03em}
 .sticky-notices{position:sticky;top:var(--bar-height);z-index:9;display:grid;grid-template-columns:minmax(0,1fr)}
 .notice,.away{position:static;z-index:auto;min-width:0;overflow-wrap:anywhere}
@@ -578,6 +579,7 @@ $('start').onclick=async()=>{
 function tick(){
   const left=Math.max(0,deadline-Date.now()),m=Math.floor(left/60000),s=Math.floor(left%60000/1000);
   $('clock').textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+  $('clock').classList.toggle('low',left<60000);
   if(left<=0)finish(true);
 }
 let csClose=null;                                       /* بتسكّر نافذة التأكيد (مثلاً لما ينتهي الوقت وهي مفتوحة) */
