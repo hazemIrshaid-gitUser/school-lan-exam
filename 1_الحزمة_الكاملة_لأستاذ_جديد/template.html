@@ -217,6 +217,7 @@ body{background:radial-gradient(ellipse at 50% -180px,#d8e8ed 0,transparent 560p
 #s-done .info th{background:#e7f0f3}
 #s-done .big{color:#14566b}
 #s-done #status{margin:12px var(--login-pad) 16px}
+#s-done #new-student{width:calc(100% - 2*var(--login-pad));margin:0 var(--login-pad) 18px}
 #s-done #review{margin-inline:var(--login-pad);padding-bottom:22px}
 .rv{background:#f8fbfc}
 @media(min-width:600px){
@@ -348,6 +349,7 @@ body{background:radial-gradient(ellipse at 50% -180px,#d8e8ed 0,transparent 560p
     <h2>تم تسليم الامتحان</h2>
     <div id="score"></div>
     <p class="mut" id="status"></p>
+    <button class="pri hide" id="new-student" type="button"><span>طالب جديد</span><span class="button-icon" aria-hidden="true">←</span></button>
     <div id="review"></div>
   </div>
 </div>
@@ -410,6 +412,8 @@ async function claimName(g,s,n){if(!CLAIM_ON())return 'ok';try{const r=await fet
 const namesFor=(g,s)=>((ROSTER[g]||{})[s]||[]).filter(n=>!TAKEN.has(claimKey(g,s,n)));
 $('sec').onchange=async()=>{$('claimmsg').classList.add('hide');await loadTaken();fill($('nm'),namesFor($('g').value,$('sec').value),'اختر الاسم');chk()};
 $('nm').onchange=chk;
+$('new-student').onclick=()=>location.reload();   /* طالب جديد على نفس الجهاز: نفس الـ refresh بضغطة. الزر بيظهر بعد ما تنحفظ النتيجة بس، عشان تسليم ما انحفظ ما يضيع */
+const showNew=()=>$('new-student').classList.remove('hide');
 if(CONFIG.needCode){$('codeLbl').classList.remove('hide');$('code').classList.remove('hide');$('code').oninput=chk}
 function chk(){
   const ok=$('nm').value!=='' && $('nm').value;
@@ -629,7 +633,7 @@ async function finish(auto){
       try{const r=await fetch(CONFIG.endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(srec)});
         if(r.status===409){releasedReset();return}
         if(!r.ok)throw new Error(r.status);const j=await r.json();store.set(skey(),'done');store.del(SK);store.del(LK);
-        $('score').innerHTML=info+scoreRow(j.score,j.total)+'</table>'+tail;$('status').textContent='تم حفظ النتيجة ✓';loadReview();
+        $('score').innerHTML=info+scoreRow(j.score,j.total)+'</table>'+tail;$('status').textContent='تم حفظ النتيجة ✓';showNew();loadReview();
         return}catch(e){await new Promise(r=>setTimeout(r,1500))}
     }
     $('status').textContent='تعذّر الحفظ (انقطع الاتصال بالسيرفر). لا تسكّر الصفحة: بنرجع نحاول تلقائياً أول ما يرجع السيرفر، وإن استمرت المشكلة أبلغ المعلم فوراً.';
@@ -637,11 +641,11 @@ async function finish(auto){
   }
   $('score').innerHTML=info+scoreRow(score,paper.length)+'</table>'+tail;if(CONFIG.teacherPreview)previewReview(ans);
   const rec={exam:CONFIG.examTitle,grade:student.grade,section:student.section,name:student.name,score,total:paper.length,answers:ans.join(','),key:paper.map(q=>q.a).join(','),qdata:paper.map(q=>({n:q.n,level:q.level,q:q.q,o:QUESTIONS[q.id].o,a:q.a})),auto:auto?'انتهى الوقت':'تسليم يدوي',time:new Date().toLocaleString('en-GB'),leave:leaveN?`${leaveN} مرة (${leaveSec} ث)`:'لم يخرج'};
-  if(!CONFIG.endpoint){$('status').textContent=CONFIG.teacherPreview?'معاينة المعلم: النتيجة غير محفوظة ولا تظهر بالمراقبة.':'وضع تجريبي: لم يتم حفظ النتيجة (لم يُضبط رابط الحفظ).';return}
+  if(!CONFIG.endpoint){$('status').textContent=CONFIG.teacherPreview?'معاينة المعلم: النتيجة غير محفوظة ولا تظهر بالمراقبة.':'وضع تجريبي: لم يتم حفظ النتيجة (لم يُضبط رابط الحفظ).';showNew();return}
   $('status').textContent='جارٍ حفظ النتيجة...';
   for(let t=0;t<3;t++){
     try{await fetch(CONFIG.endpoint,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(rec)});
-      $('status').textContent='تم حفظ النتيجة ✓';return}catch(e){await new Promise(r=>setTimeout(r,1500))}
+      $('status').textContent='تم حفظ النتيجة ✓';showNew();return}catch(e){await new Promise(r=>setTimeout(r,1500))}
   }
   $('status').textContent='تعذّر الحفظ، أبلغ المعلم فوراً. رمز النتيجة: '+btoa(unescape(encodeURIComponent(JSON.stringify(rec)))).slice(0,200);
 }
