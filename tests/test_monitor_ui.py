@@ -1,4 +1,4 @@
-"""واجهة المعلم /monitor بمتصفح حقيقي: البطاقات، الفلاتر، الأزرار وحوارات prompt/confirm، التحديث التلقائي، وانقطاع السيرفر.
+"""واجهة المعلم القديمة /monitor-old بمتصفح حقيقي: البطاقات، الفلاتر، الأزرار وحوارات prompt/confirm، التحديث التلقائي، وانقطاع السيرفر.
 الطلاب بيتحركوا عبر API (بدل متصفحات)، والمعلم بيشوف ويضغط من المتصفح. لتصوير الشاشات: SHOTS_DIR=مجلد"""
 import json, os, pathlib, re, time
 from collections import deque
@@ -38,7 +38,7 @@ def mon(browser, web):
             d.accept()
     page.on("dialog", on_dialog)
     errors = []; page.js_errors = errors; page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(url(web) + "monitor"); page.wait_for_selector("#cards .card")
+    page.goto(url(web) + "monitor-old"); page.wait_for_selector("#cards .card")        # الصفحة القديمة (بتضل احتياطية)؛ الجديدة بـ test_monitor_new_ui.py
     yield page
     ctx.close()
 

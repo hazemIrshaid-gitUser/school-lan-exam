@@ -84,9 +84,19 @@ def main():
     src = pathlib.Path(a.input); out = pathlib.Path(a.output).resolve()
     title = a.title or (re.search(r"^#\s+(.+)$", src.read_text(encoding="utf-8"), re.M) or [None, src.stem])[1]
     html = md_to_html(src.read_text(encoding="utf-8"), title, a.compact)
+    out.unlink(missing_ok=True)                           # بدونها: لو Edge ما أنتج شي، بنعتبر الـ PDF القديم هو الناتج ونطبع «تمّ» وهو ما اتغيّر
     with tempfile.TemporaryDirectory() as d:
         h = pathlib.Path(d) / "doc.html"; h.write_text(html, encoding="utf-8")
-        r = subprocess.run([find_edge(), "--headless", "--disable-gpu", "--no-pdf-header-footer", f"--print-to-pdf={out}", h.as_uri()], capture_output=True, text=True, timeout=180)
+        # ملف تعريف (profile) مؤقت: بدونه، لو Edge مفتوح عند المستخدم بيتحوّل الطلب للنافذة المفتوحة وما بيطلع PDF
+        with tempfile.TemporaryDirectory(prefix="md2pdf_edge_") as prof:
+            r = subprocess.run([find_edge(), "--headless", "--disable-gpu", "--no-pdf-header-footer", f"--user-data-dir={prof}", f"--print-to-pdf={out}", h.as_uri()], capture_output=True, text=True, timeout=180)
+        if not out.exists():                              # Edge بسطر الأوامر أحياناً بيرجع بدون ما يطبع شي (Edge مفتوح، أو برنامج حماية): نجرّب Playwright لو موجود
+            try:
+                from playwright.sync_api import sync_playwright
+                with sync_playwright() as pw:
+                    br = pw.chromium.launch(channel="msedge", headless=True); pg = br.new_page(); pg.goto(h.as_uri())
+                    pg.pdf(path=str(out), prefer_css_page_size=True, print_background=True); br.close()
+            except Exception as e: r.stderr += f"\n(Playwright: {e!r})"
     if not out.exists(): sys.exit("فشل توليد الـ PDF:\n" + r.stdout + r.stderr)
     print(f"تمّ: {out}  ({out.stat().st_size // 1024} KB)")
 

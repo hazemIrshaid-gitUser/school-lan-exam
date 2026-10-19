@@ -1128,6 +1128,28 @@ def build_xlsx():
 
 # ---------- صفحات المعلم ----------
 CSS = "<meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><style>body{font-family:Tahoma,Arial;max-width:1100px;margin:20px auto;padding:0 12px;background:#f4f6f8}h2{color:#14566b}table{border-collapse:collapse;width:100%;background:#fff;margin:8px 0 20px}td,th{border:1px solid #ccd;padding:6px 8px;text-align:right}th{background:#e8f2f5}.done{background:#e3f5e9}.live{background:#fff8dc}.lost{background:#fde5e5}.none{color:#888}.btn{display:inline-block;padding:6px 12px;background:#14566b;color:#fff;border-radius:6px;text-decoration:none;margin:2px;cursor:pointer;border:0;font:inherit}.btn.red{background:#b3261e}.btn.gray{background:#667}.cards span{display:inline-block;background:#fff;border:1px solid #ccd;border-radius:8px;padding:8px 14px;margin:4px;font-weight:bold}.bar{display:inline-block;background:#14566b;height:14px;vertical-align:middle}</style>"
+MONITOR_UI = os.path.join(BASE, "monitor_ui")     # واجهة المراقبة الجديدة: ملفات ثابتة جاهزة (مصدرها tools/monitor_ui_src). لو المجلد مش موجود بتنعرض الصفحة القديمة
+_UI_TYPES = {".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml",
+             ".json": "application/json; charset=utf-8", ".ico": "image/x-icon", ".png": "image/png", ".txt": "text/plain; charset=utf-8"}
+def student_link(): return f"http://{ip()}{'' if PORT == 80 else ':' + str(PORT)}"
+def monitor_ui_page():
+    """صفحة المراقبة الجديدة مع رابط الطلاب وعنوان الامتحان (بنبدّل window.MONITOR_CONFIG بالصفحة الجاهزة). None لو ملفات الواجهة مش موجودة"""
+    try:
+        with open(os.path.join(MONITOR_UI, "index.html"), encoding="utf-8") as f: page = f.read()
+    except OSError: return None
+    cfg = json.dumps({"link": student_link(), "title": SET["title"]}, ensure_ascii=False).replace("<", "\\u003c")     # العنوان نص من المعلم: ما بنسمح بإغلاق وسم script
+    return re.sub(r"window\.MONITOR_CONFIG\s*=\s*\{.*?\};", lambda m: "window.MONITOR_CONFIG = " + cfg + ";", page, count=1, flags=re.S)
+def monitor_ui_asset(rel):
+    """ملف ثابت من مجلد monitor_ui (جوّا المجلد بس، حتى لو فيه .. أو رابط رمزي): (بايتات، نوع المحتوى) أو None"""
+    if "\\" in rel or "\x00" in rel: return None
+    root = os.path.realpath(MONITOR_UI)
+    try: p = os.path.realpath(os.path.join(root, *[x for x in rel.split("/") if x]))
+    except (ValueError, OSError): return None
+    if not p.startswith(root + os.sep) or not os.path.isfile(p) or os.path.splitext(p)[1].lower() not in _UI_TYPES: return None
+    with open(p, "rb") as f: return f.read(), _UI_TYPES[os.path.splitext(p)[1].lower()]
+def monitor_old_page():
+    """صفحة المراقبة القديمة: بتضل شغّالة على /monitor-old، وبتنعرض على /monitor لو مجلد monitor_ui مش موجود"""
+    return MONITOR.replace("__LINK__", student_link()).replace("__TITLE__", html.escape(SET["title"]))
 MONITOR = """<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>مراقبة الامتحان</title>
 <style>
 :root{--ink:#1c2733;--mut:#667788;--line:#dde3ea;--pri:#14566b;--ok:#1b7f4b;--okbg:#e6f6ec;--live:#9a6b00;--livebg:#fff6d9;--bad:#b3261e;--badbg:#fde8e6;--none:#7a8794;--nonebg:#f1f3f5}
@@ -1498,11 +1520,16 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.send("", code=302, extra={"Location": "/monitor", "Set-Cookie": "exam_t=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"})
         if path in PROTECTED and SET["tpass"] and self.teacher() and not self.authed():
             return self.send("", code=302, extra={"Location": "/login?next=" + urllib.parse.quote(self.path)})
-        if path in ("/monitor", "/monitor.json", "/admin", "/report", "/report.xlsx", "/sheet", "/key", "/codes", "/teacher"):
+        if path.startswith("/monitor-ui/"):                  # ملفات واجهة المراقبة الجديدة (للمعلم فقط، زي صفحة المراقبة نفسها)
+            if not self.teacher(): return self.not_local(path)
+            a = monitor_ui_asset(urllib.parse.unquote(path[len("/monitor-ui/"):]))
+            return self.send(a[0], a[1], extra={"Cache-Control": "no-cache"}) if a else self.send("غير موجود", code=404)
+        if path in ("/monitor", "/monitor-old", "/monitor.json", "/admin", "/report", "/report.xlsx", "/sheet", "/key", "/codes", "/teacher"):
             if not self.teacher(): return self.not_local(path)
             with LOCK:
                 if path in ("/monitor", "/admin"):
-                    return self.send(MONITOR.replace("__LINK__", f"http://{ip()}{'' if PORT == 80 else ':' + str(PORT)}").replace("__TITLE__", html.escape(SET["title"])), "text/html; charset=utf-8")
+                    return self.send(monitor_ui_page() or monitor_old_page(), "text/html; charset=utf-8")      # الجديدة، أو القديمة لو مجلد monitor_ui مش موجود
+                if path == "/monitor-old": return self.send(monitor_old_page(), "text/html; charset=utf-8")
                 if path == "/monitor.json":
                     rows = student_rows(); secs = defaultdict(list)
                     for r in rows: secs[f"{r['grade']} — شعبة {r['section']}"].append(r)

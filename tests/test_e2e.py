@@ -214,7 +214,7 @@ def run_exam_day(browser, phone, w, home, QA, port, srv, t_start):
     T.goto(url(w) + "teacher"); T.wait_for_selector("#s-exam:not(.hide)", timeout=15000)
     assert len(T.query_selector_all("#qs .card")) == 30                                                        # معاينة المعلم: كل البنك
     shot(T, "01_teacher_preview")
-    T.goto(url(w) + "monitor"); T.wait_for_selector("#cards .card")
+    T.goto(url(w) + "monitor-old"); T.wait_for_selector("#cards .card")            # الصفحة القديمة (عدّادات #cards): الواجهة الجديدة على /monitor وتستها بـ test_monitor_new_ui.py
     assert [int(x) for x in T.eval_on_selector_all("#cards .n", "e=>e.map(x=>x.textContent)")] == [0, 0, 0, 14]
 
     # ---------- 6) الطلاب يدخلوا ----------
@@ -338,7 +338,7 @@ def run_exam_day(browser, phone, w, home, QA, port, srv, t_start):
     T.goto(url(w) + "codes"); data = T.pdf(format="A4"); assert len(pypdf.PdfReader(io.BytesIO(data)).pages) >= 2    # قصاصات الرموز
 
     step("20) بداية امتحان جديد: أرشفة وتصفير")
-    T.goto(url(w) + "monitor"); T.wait_for_selector("#cards .card"); T.click("text=بداية امتحان جديد"); T.wait_for_function("document.querySelectorAll('#cards .n')[3].textContent==='14'", timeout=10000)
+    T.goto(url(w) + "monitor-old"); T.wait_for_selector("#cards .card"); T.click("text=بداية امتحان جديد"); T.wait_for_function("document.querySelectorAll('#cards .n')[3].textContent==='14'", timeout=10000)
     arch = [d for d in os.listdir(home) if d.startswith("archive_")]; assert arch and (home / arch[0] / "submissions.jsonl").exists()
     assert not (home / "submissions.jsonl").exists() or (home / "submissions.jsonl").read_text(encoding="utf-8") == ""
     assert not errs, errs

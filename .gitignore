@@ -31,3 +31,7 @@ students.xlsx
 students.csv
 exam_data.zip
 images/
+
+# مصدر واجهة المراقبة: ما بنرفع الحزم ولا الناتج المبني (الناتج الجاهز بمجلد monitor_ui بالحزمة)
+tools/monitor_ui_src/node_modules/
+tools/monitor_ui_src/dist/
