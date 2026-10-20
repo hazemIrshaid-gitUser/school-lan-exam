@@ -13,7 +13,7 @@ DATA_JSON = ("claims.json", "papers.json", "state.json", "answers.json")
 CODE_FILES = ("server.py", "template.html", "check_files.py", "figures_tool.py", "report_problem.py", "start.bat", "check_files.bat", "report_problem.bat")
 KNOWN = set(CODE_FILES) | set(DATA_JSON) | {
     "questions.xlsx", "questions.csv", "students.xlsx", "students.csv", "settings.txt", "exam_data.zip", "codes.json", "submissions.jsonl",
-    "results.csv", "alive.txt", "exam_log.txt", "exam_error.txt", "exam_info.txt", "check_report.txt", "questions_template.xlsx",
+    "results.csv", "alive.txt", "server.lock", "exam_log.txt", "exam_error.txt", "exam_info.txt", "check_report.txt", "questions_template.xlsx",
     "students_template.xlsx", "00_دليل_المشرف.pdf", "01_تعليمات_Claude.pdf", "02_قائمة_فحص_قبل_الامتحان.pdf", "03_ورقة_الأستاذ.pdf",
     "students_from_zip.xlsx", "students_from_zip.csv", "settings_from_zip.txt"}
 

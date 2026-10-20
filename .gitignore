@@ -12,6 +12,7 @@ state.json
 answers.json
 codes.json
 alive.txt
+server.lock
 exam_log.txt
 exam_info.txt
 exam_error.txt

@@ -46,6 +46,41 @@ if CONSOLE_NO_ARABIC:
                 if len(left.strip()) >= 8 and not _re_log.search("[\u0600-\u06FF]", left): _real_print(left)
             return
         _real_print(*args, **kw)
+LOCK_FILE = os.path.join(BASE, "server.lock")
+_LOCK_FH = None
+LOCK_AT = 1 << 30                                   # مكان القفل: بعد نهاية الملف بكتير (ما حدا بيقرا هالمنطقة)
+def take_folder_lock(wait=3.0):
+    """سيرفر واحد بس لكل مجلد امتحان: ملف server.lock بنمسكه بقفل حصري طول ما العملية شغّالة. سيرفران على نفس المجلد بيكتبوا على نفس ملفات النتائج والحالة فبيخرّبوها؛ وكنا نعتمد على المشرف إنه ما يضغط start.bat مرتين.
+    نظام التشغيل بيفك القفل لحاله لو العملية وقفت أو انقتلت (فما بيضل قفل عالق، وإعادة التشغيل الفورية بتزبط؛ بنعيد المحاولة 3 ثواني لأن العملية اللي قبلها ممكن تكون لسا بتسكّر)، وملف قفل قديم متروك ما بيمنع شي.
+    القفل على بايت بعيد جداً (بعد نهاية الملف) مش على محتواه: على ويندوز القفل بيمنع القراءة، فلو قفلنا أول بايت كان نسخ المجلد والسيرفر شغّال (اللي بيعمله المشرف لامتحان ثاني) بيفشل عند هالملف. محتوى الملف هو رقم العملية (PID) لرسالة الرفض. بترجّع False لو في سيرفر ثاني ماسك المجلد"""
+    global _LOCK_FH
+    fh = open(LOCK_FILE, "a+b"); end = time.time() + wait
+    while True:
+        try:
+            fh.seek(LOCK_AT)
+            if os.name == "nt":
+                import msvcrt; msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl; fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            if time.time() >= end: fh.close(); return False
+            time.sleep(0.1)
+    _LOCK_FH = fh
+    try: fh.truncate(0); fh.write(str(os.getpid()).encode("ascii")); fh.flush()
+    except OSError: pass
+    return True
+if __name__ == "__main__" and not take_folder_lock():
+    try:
+        with open(LOCK_FILE, "rb") as _f: _pid = _f.read().decode("ascii", "replace").strip()
+    except OSError: _pid = ""
+    _who = f", PID {_pid}" if _pid.isdigit() else ""
+    print("=" * 60); print(f"  ALREADY RUNNING: this exam folder already has a server running (another black window{_who}).")
+    print("  Do not start it twice: two servers writing the same files would corrupt the results.")
+    print("  - Use the first window (its student link is still valid), or close it first and then start again.")
+    print("  - For a second exam at the same time, copy the whole folder and start the copy."); print("=" * 60)
+    if not CONSOLE_NO_ARABIC: print(f"  هذا المجلد شغّال أصلاً من نافذة سوداء ثانية{_who}. لا تشغّله مرتين: استعمل النافذة الأولى (رابط الطلاب نفسه)، أو سكّرها أولاً. لامتحان ثاني بنفس الوقت انسخ المجلد كاملاً وشغّل النسخة.")
+    sys.exit(1)
 OUT = os.path.join(BASE, "results.csv")            # يُولَّد من submissions.jsonl (المصدر الأساسي) — آمن لو كان مفتوحاً بـ Excel
 SUBS_FILE = os.path.join(BASE, "submissions.jsonl")
 CLAIMS_FILE = os.path.join(BASE, "claims.json")
