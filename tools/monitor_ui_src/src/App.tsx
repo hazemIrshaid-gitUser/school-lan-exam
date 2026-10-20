@@ -80,6 +80,7 @@ const CONFIRM_COPY = {
   newExam: 'بداية امتحان جديد؟\nبنحفظ النتائج الحالية بمجلد أرشيف وبنصفّر الحجوزات والشاشة.\nتأكد إنك طبعت الأوراق ونزّلت Excel.',
   submit: 'تسليم إجابات هذا الطالب (المحفوظة على السيرفر) الآن وتصحيحها؟\nالأسئلة اللي ما أجاب عنها بتنحسب خاطئة، وما بيقدر يكمل بعدها.',
   close: 'إنهاء الامتحان للجميع؟ كل صفحة طالب بتسلّم تلقائياً خلال ثواني، ولا يقدر أحد يبدأ.',
+  reopenStudent: 'إعادة فتح الطالب اللي سلّم بالغلط: بتنلغي علامته الحالية (بتضل بسجل submissions.jsonl كأرشيف)، وبيرجع لأسئلته بنفس إجاباته المحفوظة ووقته اللي كان باقيله لحظة التسليم (على الأقل دقيقتين). لازم يسلّم من جديد. صفحته بترجع للأسئلة خلال ثواني، ولو سكّرها بدّه يعيد اختيار اسمه من نفس الجهاز.',
   reopen: 'إعادة فتح الامتحان؟ اللي سلّموا تلقائياً يبقى تسليمهم، واللي ما سلّموا يرجع إلهم وقتهم.',
   bank: 'متأكد إن هذا نفس الامتحان وبس صلّحت أسئلة؟\nإذا امتحان جديد اضغط «بداية امتحان جديد» بدل هذا.',
 };
@@ -127,7 +128,7 @@ function App() {
   const [query, setQuery] = useState('');
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [openRowMenu, setOpenRowMenu] = useState<string | null>(null);
-  const [rowMenuOpensUp, setRowMenuOpensUp] = useState(false);
+  const [rowMenuPos, setRowMenuPos] = useState<{ left: number; top: number; maxHeight: number } | null>(null);   // مكان قائمة ⋯ بالشاشة (fixed): ما بتنقص بإطار الجدول مهما كان فيه صف وحدة بس
   const [toolsOpen, setToolsOpen] = useState(false);
   const [attentionOpen, setAttentionOpen] = useState(true);
   const [modal, setModal] = useState<ModalState>(null);
@@ -194,6 +195,14 @@ function App() {
       window.removeEventListener('keydown', closeFromEscape);
     };
   }, [openRowMenu, toolsOpen]);
+  useEffect(() => {
+    if (!openRowMenu) return;
+    const startY = window.scrollY;
+    const onScroll = (event: Event) => { if (event.target !== document || Math.abs(window.scrollY - startY) > 2) setOpenRowMenu(null); };      // القائمة fixed: لو تحرّكت الصفحة فعلاً (مش سكرول وصل متأخر قبل الفتح) أو تحرّك الجدول بنسكّرها بدل ما تضل بمكان غلط
+    const onResize = () => setOpenRowMenu(null);
+    window.addEventListener('scroll', onScroll, true); window.addEventListener('resize', onResize);
+    return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onResize); };
+  }, [openRowMenu]);
   useEffect(() => {
     if (!toast) return;
     const id = window.setTimeout(() => setToast(''), 4200);
@@ -333,6 +342,13 @@ function App() {
     return result.sort((a, b) => b.urgency - a.urgency);
   }, [data]);
 
+  const placeRowMenu = (button: Element, itemCount: number) => {
+    const bounds = button.getBoundingClientRect(), width = 180, height = itemCount * 33 + 14;
+    const below = window.innerHeight - bounds.bottom - 8, above = bounds.top - 8;
+    const left = Math.max(8, Math.min(bounds.left, window.innerWidth - width - 8));
+    const margin = 8, wantTop = below >= height || below >= above ? bounds.bottom + 3 : bounds.top - 3 - height;                 // تحت الزر، أو فوقه لو ما في مكان تحت
+    setRowMenuPos({ left, top: Math.max(margin, Math.min(wantTop, window.innerHeight - height - margin)), maxHeight: window.innerHeight - margin * 2 });   // وبكل الأحوال داخل حدود الشاشة (ولو الشاشة صغيرة جداً بتتمرّر من جواها)
+  };
   const getRemain = (row: Student) => row.paused !== undefined ? (row.remain || 0) : Math.max(0, (row.remain || 0) - secondsSinceSync);   // الموقوف وقته متجمّد
   const showModal = (next: Exclude<ModalState, null>) => { setModal(next); setToolsOpen(false); setOpenRowMenu(null); };
 
@@ -368,6 +384,9 @@ function App() {
       } else if ('move' in command) {
         const row = flatten(next.sections).find((item) => item.key === command.move);
         if (row) { row.status = 'live'; row.ago = 2; }
+      } else if ('reopen' in command) {
+        const row = flatten(next.sections).find((item) => item.key === command.reopen);
+        if (row) { row.status = 'live'; row.answered = row.total || 10; row.remain = 120; row.ago = 1; delete row.score; delete row.durtxt; }
       } else if ('pause' in command) {
         const row = flatten(next.sections).find((item) => item.key === command.pause);
         if (row) row.paused = 0;
@@ -418,12 +437,12 @@ function App() {
   const confirmAction = (type: keyof typeof CONFIRM_COPY, command: Record<string, unknown>) => {
     showModal({
       kind: 'confirm',
-      title: type === 'newExam' ? 'بداية امتحان جديد' : type === 'close' ? 'إنهاء الامتحان للجميع' : type === 'reopen' ? 'إعادة فتح الامتحان' : type === 'bank' ? 'تأكيد ملف الأسئلة' : 'تأكيد الإجراء',
+      title: type === 'newExam' ? 'بداية امتحان جديد' : type === 'close' ? 'إنهاء الامتحان للجميع' : type === 'reopen' ? 'إعادة فتح الامتحان' : type === 'reopenStudent' ? 'إعادة فتح الطالب' : type === 'bank' ? 'تأكيد ملف الأسئلة' : 'تأكيد الإجراء',
       copy: CONFIRM_COPY[type],
       command,
-      danger: type === 'newExam' || type === 'close' || type === 'release' || type === 'submit',
+      danger: type === 'newExam' || type === 'close' || type === 'release' || type === 'submit' || type === 'reopenStudent',
       safeLabel: 'إلغاء',
-      dangerLabel: type === 'release' ? 'فك الحجز' : type === 'move' ? 'نقل الطالب' : type === 'newExam' ? 'متابعة' : type === 'submit' ? 'تسليم الآن' : type === 'close' ? 'إنهاء الامتحان' : type === 'reopen' ? 'إعادة الفتح' : 'تأكيد',
+      dangerLabel: type === 'release' ? 'فك الحجز' : type === 'move' ? 'نقل الطالب' : type === 'newExam' ? 'متابعة' : type === 'submit' ? 'تسليم الآن' : type === 'close' ? 'إنهاء الامتحان' : type === 'reopen' ? 'إعادة الفتح' : type === 'reopenStudent' ? 'إعادة فتح الطالب' : 'تأكيد',
     });
   };
 
@@ -511,7 +530,7 @@ function App() {
       const row = entry?.[1].find((candidate) => candidate.status === 'live' || candidate.status === 'done');
       if (entry && row) {
         setOpenRowMenu(keyFor(row, entry[0]));
-        setRowMenuOpensUp(window.innerHeight < 820);
+        window.requestAnimationFrame(() => { const button = document.querySelector('.kebab'); if (button) placeRowMenu(button, 5); });
       }
     } else if (deterministicState === 'modal-extend') {
       openExtend('all');
@@ -691,7 +710,7 @@ function App() {
                     const hasProgress = (row.status === 'live' || row.status === 'lost') && row.total != null;
                     const leaveDetails = row.status === 'done' ? row.leave && row.leave !== 'لم يخرج' ? row.leave.replace(/\((\d+)\s*ث\)/, '· $1 ث') : 'لم يخرج' : row.leaveN ? `⚠ ${row.leaveN} مرة · ${row.leaveSec || 0} ث` : '—';
                     const menuItems = row.status === 'done'
-                      ? [{ label: 'فتح الورقة', type: 'sheet' }, { label: 'فك الحجز', type: 'release' }]
+                      ? [{ label: 'فتح الورقة', type: 'sheet' }, { label: '↩ إعادة فتح للطالب', type: 'reopenStudent' }, { label: 'فك الحجز', type: 'release' }]
                       : row.status === 'none' ? [] : [
                         { label: '+ وقت', type: 'extend' },
                         ...(row.paused !== undefined ? [{ label: '▶ متابعة', type: 'resume' }] : row.status === 'live' ? [{ label: '⏸ إيقاف مؤقت', type: 'pause' }] : []),
@@ -710,20 +729,18 @@ function App() {
                         {row.status === 'done' && <a className="btn outline small" href={`/sheet?key=${encodeURIComponent(row.key || '')}`} target="_blank" rel="noreferrer">فتح الورقة</a>}
                         {row.paused !== undefined && <button className="btn small" type="button" onClick={() => row.key && void runCommand({ resume: row.key })}>▶ متابعة</button>}
                         {(row.status === 'live' || row.status === 'lost') && <button className="btn outline small" type="button" onClick={() => openExtend('student', row)}>+ وقت</button>}
-                        {menuItems.length > 0 && <span className={`row-menu-wrap ${openRowMenu === id && rowMenuOpensUp ? 'opens-up' : ''}`}>
+                        {menuItems.length > 0 && <span className="row-menu-wrap">
                           <button className="kebab" type="button" aria-label={`إجراءات ${row.name}`} aria-expanded={openRowMenu === id} onClick={(event) => {
                             setToolsOpen(false);
                             const next = openRowMenu === id ? null : id;
-                            if (next) {
-                              const bounds = event.currentTarget.getBoundingClientRect();
-                              setRowMenuOpensUp(window.innerHeight - bounds.bottom - 62 < 82);
-                            } else setRowMenuOpensUp(false);
+                            if (next) placeRowMenu(event.currentTarget, menuItems.length);
                             setOpenRowMenu(next);
                           }}>⋯</button>
-                          {openRowMenu === id && <span className="row-popup" role="menu">
+                          {openRowMenu === id && <span className="row-popup" role="menu" style={rowMenuPos ?? undefined}>
                             {menuItems.map((item) => item.type === 'sheet' ? <a key={item.type} role="menuitem" href={`/sheet?key=${encodeURIComponent(row.key || '')}`} target="_blank" rel="noreferrer" onClick={() => setOpenRowMenu(null)}>{item.label}</a> : <button key={item.type} role="menuitem" type="button" onClick={() => {
                               setOpenRowMenu(null);
                               if (item.type === 'extend') openExtend('student', row);
+                              if (item.type === 'reopenStudent' && row.key) confirmAction('reopenStudent', { reopen: row.key });
                               if (item.type === 'pause' && row.key) void runCommand({ pause: row.key });
                               if (item.type === 'resume' && row.key) void runCommand({ resume: row.key });
                               if (item.type === 'move' && row.key) confirmAction('move', { move: row.key });

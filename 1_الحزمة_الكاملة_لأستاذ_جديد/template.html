@@ -420,14 +420,39 @@ $('nm').onchange=chk;
 $('new-student').onclick=()=>location.reload();   /* طالب جديد على نفس الجهاز: نفس الـ refresh بضغطة. الزر بيظهر بعد ما تنحفظ النتيجة بس، عشان تسليم ما انحفظ ما يضيع */
 const showNew=()=>$('new-student').classList.remove('hide');
 if(CONFIG.needCode){$('codeLbl').classList.remove('hide');$('code').classList.remove('hide');$('code').oninput=chk}
+let reopenT=0,blkT=0;
 function chk(){
   const ok=$('nm').value!=='' && $('nm').value;
   const done=ok&&CONFIG.oneAttemptPerDevice&&store.get(key())==='done';   /* بنحجب فقط اللي سلّم فعلاً، مش اللي بدأ */
   $('blocked').classList.toggle('hide',!done);
   $('start').disabled=!ok||!!done||(CONFIG.needCode&&!$('code').value.trim());
+  blockedWatch(!!done);
 }
 
 let paper=[],student={},timer,hb,deadline,finished=false,currentQuestion=0;
+/* المعلم ممكن يعيد فتح طالب سلّم بالغلط (زر «إعادة فتح للطالب» بالمراقبة): بشاشة التسليم (أو لما يبين «سلّم من هذا الجهاز») بنسأل السيرفر كل 5 ثواني، ولو انفتح بنرجّعه لأسئلته بإجاباته */
+function watchReopen(){
+  clearInterval(reopenT);if(!CONFIG.serverGrading||!student.name)return;
+  reopenT=setInterval(async()=>{
+    const P=await srv('/resume',{key:claimKey(student.grade,student.section,student.name),dev:DEV});
+    if(P&&P.status==='ok'){clearInterval(reopenT);reopened(P)}
+  },5000);
+}
+function reopened(P){
+  store.set(skey(),'started');finished=false;asking=false;
+  paper=fromServer(P);deadline=Date.now()+P.remain*1000;
+  $('s-done').classList.add('hide');$('new-student').classList.add('hide');$('review').innerHTML='';$('score').innerHTML='';$('status').textContent='';
+  render(ansFromP(P),0);saveState();
+  if(P.paused)setPaused(true,P.remain*1000);
+}
+function blockedWatch(on){
+  clearInterval(blkT);if(!on||!CONFIG.serverGrading)return;
+  blkT=setInterval(async()=>{
+    if(!$('nm').value)return;
+    const P=await srv('/resume',{key:claimKey($('g').value,$('sec').value,$('nm').value),dev:DEV});
+    if(P&&P.status==='ok'){store.del(key());chk()}
+  },5000);
+}
 /* نسخة السيرفر المحلي: السيرفر هو اللي يحدد الأسئلة وترتيب الخيارات والوقت، والصفحة بس تعرضها */
 async function srv(path,body){try{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return await r.json()}catch(e){return{status:'error'}}}
 /* رسالة المعلم: تظهر مرة واحدة لكل رسالة جديدة (النص عبر textContent عشان ما ينحقن HTML) */
@@ -655,7 +680,7 @@ async function finish(auto){
       try{const r=await fetch(CONFIG.endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(srec)});
         if(r.status===409){releasedReset();return}
         if(!r.ok)throw new Error(r.status);const j=await r.json();store.set(skey(),'done');store.del(SK);store.del(LK);
-        $('score').innerHTML=info+scoreRow(j.score,j.total)+'</table>'+tail;$('status').textContent='تم حفظ النتيجة ✓';showNew();loadReview();
+        $('score').innerHTML=info+scoreRow(j.score,j.total)+'</table>'+tail;$('status').textContent='تم حفظ النتيجة ✓';showNew();loadReview();watchReopen();
         return}catch(e){await new Promise(r=>setTimeout(r,1500))}
     }
     $('status').textContent='تعذّر الحفظ (انقطع الاتصال بالسيرفر). لا تسكّر الصفحة: بنرجع نحاول تلقائياً أول ما يرجع السيرفر، وإن استمرت المشكلة أبلغ المعلم فوراً.';

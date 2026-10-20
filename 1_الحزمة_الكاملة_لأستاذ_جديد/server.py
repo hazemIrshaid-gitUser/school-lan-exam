@@ -564,7 +564,7 @@ if STATE.get("auto_title") != (SET["title"] if SET.get("auto_title") else None):
 ANS = load_json(ANS_FILE, {})              # مفتاح الطالب -> {رقم السؤال: رقم الخيار}
 ANS_DIRTY = [False]
 LIVE = {}                                   # مفتاح الطالب -> آخر نبضة من صفحة الطالب
-SUBS = {}                                   # مفتاح الطالب -> التسليم (أول تسليم فقط)
+SUBS = {}                                   # مفتاح الطالب -> التسليم (أول تسليم فقط بعد آخر «إعادة فتح»)
 if os.path.exists(SUBS_FILE):
     try:                                           # انقطاع كهرباء أثناء الكتابة ممكن يخلّي آخر سطر مقطوع بدون newline، فأول تسليم بعده كان يلتصق فيه ويضيع
         with open(SUBS_FILE, "rb+") as _f:
@@ -574,7 +574,10 @@ if os.path.exists(SUBS_FILE):
                 if _f.read(1) != b"\n": _f.write(b"\n")
     except OSError: pass
     for line in open(SUBS_FILE, encoding="utf-8"):
-        try: r = json.loads(line); SUBS.setdefault(r["key"], r)
+        try:
+            r = json.loads(line)
+            if r.get("reopen"): SUBS.pop(r["key"], None)          # المعلم أعاد فتح الطالب: تسليمه اللي قبل هالسطر ما بيعدّ (بيضل بالسجل كأرشيف)
+            else: SUBS.setdefault(r["key"], r)
         except Exception: pass
 
 def bank_fp():
@@ -819,12 +822,36 @@ def submit_for(k):
     lv = LIVE.get(k) or {}
     rec = {"key": k, "exam": SET["title"], "grade": w[0], "section": w[1], "name": w[2], "ids": ids, "answers": answers,
            "score": score, "total": total, "auto": "تسليم من المعلم", "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-           "leave": f"{lv['leaveN']} مرة ({lv.get('leaveSec', 0)} ث)" if lv.get("leaveN") else "لم يخرج", "late": 0}
+           "leave": f"{lv['leaveN']} مرة ({lv.get('leaveSec', 0)} ث)" if lv.get("leaveN") else "لم يخرج", "late": 0, "ts": round(time.time(), 2)}
     with open(SUBS_FILE, "a", encoding="utf-8") as f: f.write(json.dumps(rec, ensure_ascii=False) + "\n"); f.flush(); os.fsync(f.fileno())
     SUBS[k] = rec; LIVE.pop(k, None)
     if ANS.pop(k, None) is not None: ANS_DIRTY[0] = True
     print("تسليم من المعلم:", w[1], w[2], score, "/", total, f"({sum(1 for a in answers if a >= 0)} إجابة محفوظة)")
     return True
+REOPEN_MIN = 120                                # أقل وقت بنعطيه لطالب أُعيد فتحه (ثواني)، حتى لو سلّم قبل نهاية وقته بلحظات
+def reopen_student(k):
+    """إعادة فتح طالب سلّم بالغلط: تسليمه بينلغى (بيضل بـ submissions.jsonl كأرشيف وبعده سطر «reopen»)، وبيرجع لأسئلته بإجاباته المحفوظة ووقته اللي كان باقيله لحظة
+    التسليم (التمديدات محسوبة، وعلى الأقل REOPEN_MIN). الاسم والجهاز بيضلوا محجوزين، وصفحته (لو لسا مفتوحة) بترجع للأسئلة خلال ثواني. بترجّع نص الخطأ أو None"""
+    if k not in SUBS: return "الطالب ما سلّم (أو ما بدأ)"
+    if STATE["closed_at"]: return "الامتحان منتهٍ: أعد فتحه أولاً ثم أعد فتح الطالب"
+    p = PAPERS.get(k)
+    if p is None or k not in CLAIMS: return "ما في ورقة محفوظة لهالطالب (انفكّ حجزه)"
+    rec = SUBS[k]; now = time.time(); ts = rec.get("ts")
+    if not isinstance(ts, (int, float)) or isinstance(ts, bool):                 # تسليم من نسخة أقدم: نقرأ الوقت من النص
+        try: ts = time.mktime(time.strptime(rec["time"], "%Y-%m-%d %H:%M:%S"))
+        except (KeyError, TypeError, ValueError, OverflowError): ts = now
+    ts = min(ts, now)
+    target = max(int(p["start"] + SET["minutes"] * 60 + p.get("extra", 0) - ts), REOPEN_MIN)
+    saved = {str(n): a for n, a in zip(rec["ids"], rec["answers"]) if isinstance(a, int) and not isinstance(a, bool) and a >= 0}
+    with open(SUBS_FILE, "a", encoding="utf-8") as f:                              # أول شي بنكتب السطر؛ لو فشلت الكتابة ما بيتغيّر شي
+        f.write(json.dumps({"key": k, "reopen": round(now, 2), "exam": SET["title"], "time": time.strftime("%Y-%m-%d %H:%M:%S")}, ensure_ascii=False) + "\n"); f.flush(); os.fsync(f.fileno())
+    p.pop("paused", None); p["extra"] = now + target - p["start"] - SET["minutes"] * 60; p["pz"] = p.get("pz", 0) + (now - ts)      # مدة «سلّم» ما بتنحسب من مدة حله
+    SUBS.pop(k); ANS[k] = saved; ANS_DIRTY[0] = True
+    try: atomic_write(ANS_FILE, json.dumps(ANS, ensure_ascii=False)); ANS_DIRTY[0] = False             # الإجابات المستعادة بتنكتب فوراً (لو وقف السيرفر الآن ما بتضيع)
+    except OSError: pass
+    LIVE[k] = {"t": now, "answered": len(saved), "total": len(rec["ids"]), "remain": target, "leaveN": 0, "leaveSec": 0}
+    save_papers(); write_results_csv()
+    return None
 def write_results_csv():
     """results.csv يتولّد من التسليمات. لو كان مفتوح بـ Excel نتجاوز (التسليم محفوظ بـ jsonl أصلاً)"""
     buf = io.StringIO(); w = csv.writer(buf); w.writerow(HEAD)
@@ -1591,6 +1618,12 @@ class H(http.server.BaseHTTPRequestHandler):
                 rk = d.get("release")
                 if rk in CLAIMS and rk not in SUBS:
                     del CLAIMS[rk]; PAPERS.pop(rk, None); LIVE.pop(rk, None); ANS.pop(rk, None); ANS_DIRTY[0] = True; save_claims(); save_papers(); print("فك حجز:", rk.split("|")[-1])
+                ro = d.get("reopen")                     # إعادة فتح طالب سلّم بالغلط (بإجاباته ووقته)
+                if ro:
+                    try: err = reopen_student(ro)
+                    except OSError as e: err = f"تعذّرت الكتابة بسجل التسليمات: {e}"
+                    if err: return J({"error": err}, 400)
+                    print("إعادة فتح الطالب:", str(ro).split("|")[-1])
                 pk = d.get("pause")                      # إيقاف مؤقت لطالب (حمّام مثلاً): شاشته بتتغطّى ووقته بيتجمّد لحد «متابعة»؛ حجز الاسم والجهاز بيضل
                 if pk:
                     if STATE["closed_at"]: return J({"error": "الامتحان منتهٍ، ما في داعي للإيقاف"}, 400)
@@ -1700,7 +1733,7 @@ class H(http.server.BaseHTTPRequestHandler):
             else: score, total = num(got), num(W)
             rec = {"key": k, "exam": SET["title"], "grade": who[0], "section": who[1], "name": who[2], "ids": ids, "answers": answers,
                    "score": score, "total": total, "auto": str(d.get("auto", ""))[:40], "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                   "leave": str(d.get("leave", ""))[:60], "late": over if over > GRACE else 0,
+                   "leave": str(d.get("leave", ""))[:60], "late": over if over > GRACE else 0, "ts": round(now, 2),
                    "dur": max(0, int(now - p["start"] - p.get("down", 0) - p.get("pz", 0)))}   # مدة الحل: من «ابدأ» لـ «تسليم» بساعة السيرفر، بدون وقت توقف السيرفر وبدون إيقاف المعلم له
             if p.get("pz"): rec["pause"] = int(p["pz"])
             try:
@@ -1934,12 +1967,24 @@ def show_console_banner(sfx):
     _real_print("  To stop: Ctrl+C or close this window\n")
 
 
+def port_in_use(p):
+    """في برنامج بيسمع عالمنفذ؟ على ويندوز http.server بيفتح المنفذ بـ SO_REUSEADDR، وبهالخاصية سيرفران (نسختان من الحزمة) بيفتحوا نفس المنفذ بدون أي خطأ والطلبات بتتوزّع بينهم عشوائياً،
+    فما بنعتمد على فشل bind: بنجرّب نتصل. وسيرفر وقف قبل شوي ما بيسمع حدا (TIME_WAIT ما بيرد على اتصال)، فإعادة التشغيل الفورية بتضل على نفس المنفذ"""
+    try: socket.create_connection(("127.0.0.1", p), 0.5).close(); return True
+    except OSError: return False
+def bind_server(first, fallbacks=range(8000, 8010)):
+    """بيفتح السيرفر على أول منفذ فاضي: المطلوب (80 أو EXAM_PORT) ثم 8000..8009 (لحد 10 نسخ من الحزمة بنفس الجهاز). بيرجّع (السيرفر، المنفذ)، وبيرفع OSError لو كلها مشغولة"""
+    tried, last = [], None
+    for p in dict.fromkeys([first, *fallbacks]):
+        tried.append(p)
+        if port_in_use(p): continue
+        try: return http.server.ThreadingHTTPServer(("0.0.0.0", p), H), p       # مثلاً بدون صلاحية مدير على المنفذ 80: بنكمل للي بعده
+        except OSError as e: last = e
+    raise OSError(f"ما لقيت منفذ فاضي بين: {tried} (سيرفرات ثانية شغّالة؟ سكّر اللي مش لازم)") from last
+
+
 if __name__ == "__main__":
-    try:
-        srv = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), H)
-    except OSError:
-        PORT = 8000   # لو المنفذ 80 مش متاح (أو بدون صلاحية مدير) نرجع لـ 8000
-        srv = http.server.ThreadingHTTPServer(("0.0.0.0", 8000), H)
+    srv, PORT = bind_server(PORT)
     write_results_csv()
     COMP = compensate_downtime()                 # قبل أول نبضة جديدة: بنقرأ آخر لحظة كان فيها السيرفر شغّال ونعوّض الطلاب عن التوقف
     beat(); LAST_TICK[0] = time.time()

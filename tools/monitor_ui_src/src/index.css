@@ -133,8 +133,7 @@ a { color: inherit; }
 .score { color: var(--primary-deep); font-size: 14px; font-weight: 800; white-space: nowrap; }
 .action-cell { text-align: left; white-space: nowrap; }
 .kebab { width: 33px; min-height: 30px; border: 1px solid var(--line); border-radius: 7px; background: white; color: var(--muted); font-weight: 900; }
-.row-popup { position: absolute; z-index: 15; left: 0; top: calc(100% + 3px); width: 180px; padding: 5px; border: 1px solid var(--line); border-radius: 9px; background: #fff; box-shadow: 0 8px 22px #103e5021; }
-.row-menu-wrap.opens-up .row-popup { top: auto; bottom: calc(100% + 3px); }
+.row-popup { position: fixed; z-index: 40; width: 180px; overflow-y: auto; padding: 5px; border: 1px solid var(--line); border-radius: 9px; background: #fff; box-shadow: 0 8px 22px #103e5021; }
 .row-popup button, .row-popup a { display: flex; width: 100%; min-height: 33px; align-items: center; padding: 5px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); text-align: right; text-decoration: none; font-size: 12px; }
 .row-popup button:hover, .row-popup a:hover { background: #eef5f7; }
 .empty-state { padding: 28px 16px; color: var(--muted); text-align: center; }

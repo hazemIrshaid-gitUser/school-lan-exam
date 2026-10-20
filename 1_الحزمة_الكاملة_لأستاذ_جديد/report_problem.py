@@ -187,13 +187,14 @@ def files_check():
         add(name, note)
     f = p("submissions.jsonl")
     if os.path.exists(f):
-        st = os.stat(f); good, bad, keys = 0, [], []
+        st = os.stat(f); good, bad, active, dup, reopens = 0, [], set(), 0, 0
         for i, line in enumerate(open(f, encoding="utf-8", errors="replace"), 1):
             if not line.strip(): continue
-            try: keys.append(json.loads(line)["key"]); good += 1
-            except Exception: bad.append(i)
-        dup = len(keys) - len(set(keys))
-        add("submissions.jsonl", f"{st.st_size} بايت، {ago(st.st_mtime)}، {good} تسليم سليم" + (f"، ⚠ أسطر تالفة: {bad[:20]}" if bad else "") + (f"، ⚠ مكرر: {dup}" if dup else ""))
+            try: r = json.loads(line); k = r["key"]
+            except Exception: bad.append(i); continue
+            if r.get("reopen"): reopens += 1; active.discard(k); continue              # المعلم أعاد فتح الطالب: تسليمه السابق ما بيعدّ، وتسليمه الجديد مش «مكرر»
+            good += 1; dup += k in active; active.add(k)
+        add("submissions.jsonl", f"{st.st_size} بايت، {ago(st.st_mtime)}، {good} تسليم سليم" + (f"، {reopens} إعادة فتح" if reopens else "") + (f"، ⚠ أسطر تالفة: {bad[:20]}" if bad else "") + (f"، ⚠ مكرر: {dup}" if dup else ""))
     else: add("submissions.jsonl", "مش موجود (ما في ولا تسليم بعد)")
     f = p("results.csv")
     if os.path.exists(f):
