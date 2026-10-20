@@ -318,7 +318,7 @@ def test_correct_answers_not_in_student_page(srv):
 def test_paper_reply_has_no_answers(srv):
     k = start_paper(srv)
     r = srv.paper_reply(k)
-    assert set(r) == {"status", "ids", "orders", "qs", "remain", "msg", "ans"}
+    assert set(r) == {"status", "ids", "orders", "qs", "remain", "msg", "ans", "paused"} and r["paused"] is False     # paused: إيقاف المعلم المؤقت (بوليان فقط)
     assert [q["n"] for q in r["qs"]] == r["ids"] and all(set(q) == {"n", "marks", "q", "o"} for q in r["qs"])     # بدون الإجابة والحل والمستوى والمرجع
 
 

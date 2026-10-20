@@ -6,6 +6,7 @@ from conftest import bank, roster, q
 
 H = {"Content-Type": "application/json"}
 TEACHER = {"Content-Type": "application/json", "X-Exam-Action": "1"}
+PKG_PYTHON = os.environ.get("EXAM_PYTHON") or sys.executable          # مفسّر السيرفر: EXAM_PYTHON=مسار python.exe يشغّل السيرفر بنسخة بايثون ثانية (مثل المحمول) وpytest يضل بمفسّره
 
 
 def free_port():
@@ -30,7 +31,7 @@ class Server:
     def start(self, port=None):
         self.port = port or free_port()
         env = dict(os.environ, EXAM_PORT=str(self.port), PYTHONIOENCODING="utf-8")
-        self.proc = subprocess.Popen([sys.executable, "-X", "utf8", "server.py"], cwd=self.pkg.path, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.proc = subprocess.Popen([PKG_PYTHON, "-X", "utf8", "server.py"], cwd=self.pkg.path, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(100):
             if self.proc.poll() is not None: raise RuntimeError("السيرفر وقف: " + (self.pkg.p("exam_error.txt").read_text(encoding="utf-8-sig") if self.pkg.p("exam_error.txt").exists() else "?"))
             try: socket.create_connection(("127.0.0.1", self.port), 0.2).close(); return self
@@ -190,7 +191,7 @@ def test_ping_saves_answers_and_resume_returns_them(web):
     k, _, p = web.start_student()
     ans = {str(p["ids"][0]): 2, str(p["ids"][1]): 1, "999": 1}
     r = web.post("/ping", {"key": k, "dev": "dev1", "ans": ans, "answered": 2, "total": 8, "remain": 1700, "leaveN": 1, "leaveSec": 4})[1]
-    assert set(r) == {"remain", "msg"}
+    assert set(r) == {"remain", "msg", "paused"} and r["paused"] is False
     got = web.post("/resume", {"key": k, "dev": "dev1"})[1]["ans"]
     assert got == {str(p["ids"][0]): 2, str(p["ids"][1]): 1}                 # السؤال الغريب انحذف
     assert web.post("/ping", {"key": k, "dev": "wrong", "ans": {}})[1] == {"released": True}

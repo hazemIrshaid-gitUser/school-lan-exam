@@ -4,6 +4,10 @@ set PYTHONIOENCODING=utf-8
 title Collect problem information
 cd /d "%~dp0"
 echo.
+set "PY="
+if exist "%~dp0python\python.exe" set "PY=%~dp0python\python.exe"
+if defined PY "%PY%" report_problem.py
+if defined PY goto done
 python --version >nul 2>&1
 if %errorlevel%==0 (python report_problem.py & goto done)
 py --version >nul 2>&1

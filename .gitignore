@@ -35,3 +35,7 @@ images/
 # مصدر واجهة المراقبة: ما بنرفع الحزم ولا الناتج المبني (الناتج الجاهز بمجلد monitor_ui بالحزمة)
 tools/monitor_ui_src/node_modules/
 tools/monitor_ui_src/dist/
+
+# بايثون المحمول (ملفات ثنائية كبيرة): بيجي مع زيب الحزمة الكاملة فقط (انظر tools/python_embed/README.md)
+1_*/python/
+tools/python_embed/*.zip

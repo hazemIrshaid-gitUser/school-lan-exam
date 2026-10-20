@@ -4,7 +4,7 @@ import json, os, re, socket, subprocess, sys, time
 
 import pytest
 from conftest import bank, roster
-from test_http import Server, free_port
+from test_http import Server, free_port, PKG_PYTHON
 from test_windows_env import Run
 
 ARABIC = re.compile("[\u0600-\u06FF]")
@@ -17,7 +17,7 @@ class Live:
         env = dict(os.environ, EXAM_PORT=str(self.port), PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8"); env.pop("EXAM_NO_ARABIC_CONSOLE", None)
         if force: env["EXAM_NO_ARABIC_CONSOLE"] = "1"
         env.update(extra_env or {})
-        self.proc = subprocess.Popen([sys.executable, "-X", "utf8", "server.py"], cwd=pkg.path, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        self.proc = subprocess.Popen([PKG_PYTHON, "-X", "utf8", "server.py"], cwd=pkg.path, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
         import threading
         threading.Thread(target=self._read, daemon=True).start()
         self.web = Server(pkg); self.web.port = self.port

@@ -122,6 +122,7 @@ a { color: inherit; }
 .student-row.done { --row-color: var(--done); }.student-row.live { --row-color: #d49b20; }.student-row.lost { --row-color: var(--lost); }.student-row.none { --row-color: #b7c2c9; }
 .status-pill { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .status-pill.done { background: var(--done-bg); color: var(--done); }.status-pill.live { background: var(--live-bg); color: #805300; }.status-pill.lost { background: var(--lost-bg); color: var(--lost); }.status-pill.none { background: var(--none-bg); color: var(--none); }
+.status-pill.paused { background: #e4ebfa; color: #2a4585; }
 .progress-cell { display: flex; min-width: 125px; align-items: center; gap: 7px; }
 .mini-bar { width: 70px; height: 7px; overflow: hidden; border-radius: 99px; background: #e1e8ec; }
 .mini-bar i { display: block; height: 100%; border-radius: 99px; background: #2d8fb0; }

@@ -103,6 +103,10 @@ button.pri:disabled{border-color:#d0d9de;background:#e7ecef;color:#687780;opacit
 .button-icon{display:inline-grid;place-items:center;width:24px;height:24px;margin-inline-start:9px;border-radius:50%;background:rgba(255,255,255,.16);font-size:16px;line-height:1}
 button.pri:disabled .button-icon{background:rgba(25,45,56,.08)}
 /* نافذة تأكيد التسليم: من تصميم الصفحة (مش confirm) لأنه بعض متصفحات التطبيقات المدمجة ما بتعرض نوافذ المتصفح وبترجّع «لا» لحالها */
+.pause-cover{position:fixed;inset:0;z-index:1100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;background:var(--primary-deep);color:#fff}
+.pause-cover .ico{font-size:56px;line-height:1}
+.pause-cover h2{margin:0;font-size:26px}
+.pause-cover p{margin:0;max-width:420px;font-size:18px;line-height:1.8}
 .modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(14,40,50,.62)}
 .modal-card{width:100%;max-width:440px;max-height:calc(100vh - 32px);overflow:auto;background:#fff;border-radius:18px;padding:22px 20px 18px;box-shadow:0 18px 50px rgba(0,0,0,.35)}
 .modal-card h2{margin:0 0 10px;font-size:20px;color:var(--primary)}
@@ -353,6 +357,7 @@ body{background:radial-gradient(ellipse at 50% -180px,#d8e8ed 0,transparent 560p
     <div id="review"></div>
   </div>
 </div>
+<div id="pause" class="pause-cover hide" role="alert" aria-live="assertive"><div class="ico" aria-hidden="true">⏸</div><h2>الامتحان موقوف مؤقتاً</h2><p>أوقف المعلم امتحانك. أسئلتك وإجاباتك محفوظة ووقتك متجمّد. انتظر حتى يسمح لك المعلم بالمتابعة.</p></div>
 <div id="confirm-submit" class="modal hide" role="dialog" aria-modal="true" aria-labelledby="cs-title" aria-describedby="cs-body">
   <div class="modal-card">
     <h2 id="cs-title">تأكيد تسليم الامتحان</h2>
@@ -451,6 +456,7 @@ const ansFromP=P=>{const o={};for(const [n,j] of Object.entries(P.ans||{})){cons
 let pingT;
 const SK='state|'+CONFIG.examTitle, LK='leave|'+CONFIG.examTitle;
 let leaveN=0,leaveSec=0,awayAt=0;
+let paused=false,frozenLeft=0,pauseT=0;       /* إيقاف مؤقت من المعلم: الوقت متجمّد والأسئلة مغطّاة (السيرفر هو اللي بيقرر، وبنعرف من ردّ ping/resume) */
 function getAns(){const a={};paper.forEach(q=>{const c=document.querySelector(`input[name=q${q.id}]:checked`);if(c)a[q.id]=+c.value});return a}
 function saveState(){store.set(SK,JSON.stringify({student,n:QUESTIONS.length,order:paper.map(q=>({id:q.id,o:q.o.map(o=>o.j)})),deadline,current:currentQuestion,ans:getAns(),qs:CONFIG.serverGrading?QUESTIONS:undefined}))}   /* qs: أسئلة الورقة على الجهاز، عشان لو انعاد التحميل والسيرفر واقف */
 function closeQuestionMap(restoreFocus){
@@ -562,6 +568,7 @@ $('start').onclick=async()=>{
     paper=qs;deadline=Date.now()+CONFIG.minutes*60000;
   }
   render(P?ansFromP(P):{});saveState();
+  if(P&&P.paused)setPaused(true,P.remain*1000);
 };
 /* استئناف: لو انعاد تحميل الصفحة أثناء الامتحان نرجع لنفس الأسئلة والإجابات والوقت المتبقي */
 (async function(){
@@ -570,21 +577,36 @@ $('start').onclick=async()=>{
     const s=JSON.parse(raw);if(Array.isArray(s.qs)&&s.qs.length)QUESTIONS.splice(0,QUESTIONS.length,...s.qs);if(s.n!==QUESTIONS.length)throw 0;
     student=s.student;deadline=s.deadline;
     paper=s.order.map(x=>{const q=QUESTIONS[x.id];return{id:x.id,n:q.n,level:q.level,q:q.q,a:q.a,o:x.o.map(j=>({t:q.o[j],j}))}});
-    let sa={};
+    let sa={},pz=null;
     if(CONFIG.serverGrading){   /* الوقت والورقة من السيرفر (لو السيرفر مش متاح مؤقتاً نكمل بالمحفوظ محلياً) */
       const P=await srv('/resume',{key:claimKey(student.grade,student.section,student.name),dev:DEV});
-      if(P.status==='ok'){paper=fromServer(P);deadline=Date.now()+P.remain*1000;sa=ansFromP(P)}
+      if(P.status==='ok'){paper=fromServer(P);deadline=Date.now()+P.remain*1000;sa=ansFromP(P);if(P.paused)pz=P.remain*1000}
       else if(P.status!=='error')throw 0;   /* انفكّ الحجز أو انسلّم: نرجع لشاشة الدخول */
     }
     try{const l=JSON.parse(store.get(LK)||'{}');leaveN=l.n||0;leaveSec=l.s||0}catch(e){}
-    render(Object.assign({},sa,s.ans||{}),s.current||0);   /* إجابات السيرفر + إجابات هذا الجهاز (الأحدث بتغلب) */
+    render(Object.assign({},sa,s.ans||{}),s.current||0);if(pz!==null)setPaused(true,pz);   /* إجابات السيرفر + إجابات هذا الجهاز (الأحدث بتغلب) */
   }catch(e){try{const k0=kf(student.grade,student.section,student.name);if(store.get(k0)==='started')store.del(k0)}catch(e2){}store.del(SK);student={};paper=[]}
 })();
 function tick(){
+  if(paused)deadline=Date.now()+frozenLeft;
   const left=Math.max(0,deadline-Date.now()),m=Math.floor(left/60000),s=Math.floor(left%60000/1000);
   $('clock').textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
   $('clock').classList.toggle('low',left<60000);
   if(left<=0)finish(true);
+}
+function setPaused(on,leftMs){
+  if(on){
+    frozenLeft=Math.max(0,leftMs||0);deadline=Date.now()+frozenLeft;
+    if(paused)return;
+    paused=true;if(csClose)csClose(false);leaveEnd();$('away').classList.add('hide');
+    $('pause').classList.remove('hide');$('s-exam').inert=true;$('bar').inert=true;document.body.style.overflow='hidden';
+    clearInterval(pauseT);pauseT=setInterval(ping,2500);   /* أثناء الإيقاف نسأل السيرفر أسرع عشان «متابعة» المعلم توصل بسرعة */
+    tick();
+  }else if(paused){
+    paused=false;clearInterval(pauseT);$('pause').classList.add('hide');$('s-exam').inert=false;$('bar').inert=false;document.body.style.overflow='';
+    if(leftMs!==undefined)deadline=Date.now()+leftMs;
+    tick();
+  }
 }
 let csClose=null;                                       /* بتسكّر نافذة التأكيد (مثلاً لما ينتهي الوقت وهي مفتوحة) */
 function askSubmit(un){
@@ -614,7 +636,7 @@ $('submit').onclick=async()=>{
   if(ok)finish(false);
 };
 async function finish(auto){
-  if(finished)return;if(csClose)csClose(false);leaveEnd();finished=true;clearInterval(timer);clearInterval(hb);$('away').classList.add('hide');$('notice').classList.add('hide');
+  if(finished)return;if(csClose)csClose(false);leaveEnd();finished=true;clearInterval(timer);clearInterval(hb);clearInterval(pauseT);setPaused(false);$('away').classList.add('hide');$('notice').classList.add('hide');
   let score=0;const ans=[];
   paper.forEach(q=>{
     const c=document.querySelector(`input[name=q${q.id}]:checked`);
@@ -662,7 +684,7 @@ function ping(){
   if(finished||!CONFIG.serverGrading)return;
   const away=awayAt?Math.round((Date.now()-awayAt)/1000):0;
   const ga=getAns(),ansN={};paper.forEach(q=>{if(ga[q.id]!==undefined)ansN[q.n]=ga[q.id]});
-  fetch('/ping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:claimKey(student.grade,student.section,student.name),dev:DEV,ans:ansN,answered:Object.keys(ga).length,total:paper.length,remain:Math.max(0,Math.round((deadline-Date.now())/1000)),leaveN,leaveSec:leaveSec+away})}).then(r=>r.json()).then(j=>{if(finished)return;if(j.released){releasedReset();return}if(j.submitted){finish(false);return}if(typeof j.remain==='number')deadline=Date.now()+j.remain*1000;showMsg(j.msg)}).catch(()=>{});
+  fetch('/ping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:claimKey(student.grade,student.section,student.name),dev:DEV,ans:ansN,answered:Object.keys(ga).length,total:paper.length,remain:Math.max(0,Math.round((deadline-Date.now())/1000)),leaveN,leaveSec:leaveSec+away})}).then(r=>r.json()).then(j=>{if(finished)return;if(j.released){releasedReset();return}if(j.submitted){finish(false);return}if(j.paused)setPaused(true,j.remain*1000);else{if(paused)setPaused(false,j.remain*1000);if(typeof j.remain==='number')deadline=Date.now()+j.remain*1000}showMsg(j.msg)}).catch(()=>{});
 }
 /* منع النسخ/اللصق/الاستعراض (ردع فقط، مش حماية مطلقة) */
 if(CONFIG.lockdown){
@@ -677,7 +699,7 @@ if(CONFIG.lockdown){
 }
 
 /* تسجيل الخروج من صفحة الامتحان (تاب ثاني / نافذة ثانية) */
-function leaveStart(){ if(finished||awayAt||$('s-exam').classList.contains('hide'))return; awayAt=Date.now();leaveN++;saveLeave();$('away').classList.remove('hide'); }
+function leaveStart(){ if(finished||paused||awayAt||$('s-exam').classList.contains('hide'))return; awayAt=Date.now();leaveN++;saveLeave();$('away').classList.remove('hide'); }
 function leaveEnd(){ if(!awayAt)return; leaveSec+=Math.round((Date.now()-awayAt)/1000);awayAt=0;saveLeave(); }
 function saveLeave(){ store.set(LK,JSON.stringify({n:leaveN,s:leaveSec+(awayAt?Math.round((Date.now()-awayAt)/1000):0)})) }
 document.addEventListener('visibilitychange',()=>document.hidden?leaveStart():leaveEnd());

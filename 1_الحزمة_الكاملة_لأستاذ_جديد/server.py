@@ -704,9 +704,17 @@ def make_paper():
         orders.append(o)
     return {"start": time.time(), "ids": ids, "orders": orders}
 def save_state(): atomic_write(STATE_FILE, json.dumps(STATE, ensure_ascii=False))
+def paused_for(p):
+    """كم ثانية صار الطالب موقوفاً (إيقاف مؤقت من المعلم، مثلاً للحمّام)؛ 0 لو مش موقوف. وقته متجمّد: هالمدة بتنضاف لنهاية وقته أول بأول"""
+    return time.time() - p["paused"] if "paused" in p else 0
+def settle_pause(p):
+    """إنهاء الإيقاف: المدة بتثبت بنهاية وقت الطالب (extra) وبمجموع الإيقاف (pz) اللي بنطرحه من مدة الحل. بترجّع المدة بالثواني"""
+    if "paused" not in p: return 0
+    gap = max(0.0, time.time() - p.pop("paused")); p["extra"] = p.get("extra", 0) + gap; p["pz"] = p.get("pz", 0) + gap
+    return gap
 def deadline(k):
-    """نهاية وقت الطالب: البدء + المدة + التمديد، أو لحظة إنهاء المعلم للامتحان (الأبكر)"""
-    p = PAPERS[k]; d = p["start"] + SET["minutes"] * 60 + p.get("extra", 0)
+    """نهاية وقت الطالب: البدء + المدة + التمديد (+ الإيقاف الجاري)، أو لحظة إنهاء المعلم للامتحان (الأبكر)"""
+    p = PAPERS[k]; d = p["start"] + SET["minutes"] * 60 + p.get("extra", 0) + paused_for(p)
     return min(d, STATE["closed_at"]) if STATE["closed_at"] else d
 def remain_of(k): return max(0, int(deadline(k) - time.time()))
 def fmt_dur(s):
@@ -721,7 +729,7 @@ def pub_q(n):
     return {"n": n, "marks": q["marks"], "q": qhtml(q["q"]), "o": [qhtml(o) for o in q["o"]]}
 def paper_reply(k):
     p = PAPERS[k]
-    return {"status": "ok", "ids": p["ids"], "orders": p["orders"], "qs": [pub_q(n) for n in p["ids"]], "remain": remain_of(k), "msg": STATE["msg"], "ans": ANS.get(k, {})}
+    return {"status": "ok", "ids": p["ids"], "orders": p["orders"], "qs": [pub_q(n) for n in p["ids"]], "remain": remain_of(k), "msg": STATE["msg"], "ans": ANS.get(k, {}), "paused": "paused" in p}
 def clean_ans(k, a):
     """إجابات الطالب المحفوظة: {رقم السؤال: رقم الخيار الأصلي} — نتأكد إنها ضمن ورقته فقط"""
     if not isinstance(a, dict): return None
@@ -788,7 +796,7 @@ def compensate_downtime(last=None, why="restart"):
     elif down > MAX_COMP: rec["skipped"] = True
     else:
         for k, p in PAPERS.items():
-            if k in SUBS or "frozen" in p or deadline(k) <= last: continue
+            if k in SUBS or "frozen" in p or "paused" in p or deadline(k) <= last: continue
             p["extra"] = p.get("extra", 0) + int(down); p["down"] = p.get("down", 0) + int(down); rec["students"] += 1       # down: وقت التوقف بنطرحه من مدة الحل
         if rec["students"]: save_papers()
     STATE["comp"] = rec; save_state()
@@ -799,7 +807,7 @@ def submit_for(k):
     if k in SUBS or k not in PAPERS or k not in CLAIMS: return False
     w = parse_key(k)
     if w is None: return False
-    ids = PAPERS[k]["ids"]; saved = ANS.get(k, {})
+    settle_pause(PAPERS[k]); ids = PAPERS[k]["ids"]; saved = ANS.get(k, {})
     answers = []
     for n in ids:
         try: answers.append(int(saved.get(str(n), -1)))
@@ -1046,6 +1054,7 @@ def student_rows():
                         r.update(status="live" if ago < 25 else "lost", answered=lv["answered"], total=lv["total"], remain=lv["remain"],
                                  leaveN=lv["leaveN"], leaveSec=lv["leaveSec"], ago=int(ago))
                     else: r.update(status="lost", ago=None)
+                    if "paused" in PAPERS.get(k, {}): r["paused"] = int(now - PAPERS[k]["paused"])      # موقوف مؤقتاً من المعلم (ثواني منذ الإيقاف)
                 rows.append(r)
     return rows
 def question_stats():
@@ -1582,9 +1591,17 @@ class H(http.server.BaseHTTPRequestHandler):
                 rk = d.get("release")
                 if rk in CLAIMS and rk not in SUBS:
                     del CLAIMS[rk]; PAPERS.pop(rk, None); LIVE.pop(rk, None); ANS.pop(rk, None); ANS_DIRTY[0] = True; save_claims(); save_papers(); print("فك حجز:", rk.split("|")[-1])
+                pk = d.get("pause")                      # إيقاف مؤقت لطالب (حمّام مثلاً): شاشته بتتغطّى ووقته بيتجمّد لحد «متابعة»؛ حجز الاسم والجهاز بيضل
+                if pk:
+                    if STATE["closed_at"]: return J({"error": "الامتحان منتهٍ، ما في داعي للإيقاف"}, 400)
+                    if pk not in CLAIMS or pk not in PAPERS or pk in SUBS: return J({"error": "الطالب مش بالامتحان الآن (سلّم أو ما بدأ)"}, 400)
+                    if "paused" not in PAPERS[pk]: PAPERS[pk]["paused"] = time.time(); save_papers(); print("إيقاف مؤقت:", pk.split("|")[-1])
+                rk2 = d.get("resume")                    # متابعة طالب موقوف: وقته بيكمل من حيث وقف
+                if rk2 and rk2 in PAPERS and "paused" in PAPERS[rk2]:
+                    print("متابعة بعد الإيقاف:", rk2.split("|")[-1], f"({int(settle_pause(PAPERS[rk2]))} ث)"); save_papers()
                 mk = d.get("move")                       # نقل الطالب لجهاز آخر: نفس الورقة والإجابات، والوقت المتبقي يتجمّد لحد ما يبدأ من الجهاز الجديد
                 if mk in CLAIMS and mk in PAPERS and mk not in SUBS:
-                    PAPERS[mk]["frozen"] = remain_of(mk); del CLAIMS[mk]; LIVE.pop(mk, None); save_claims(); save_papers()
+                    settle_pause(PAPERS[mk]); PAPERS[mk]["frozen"] = remain_of(mk); del CLAIMS[mk]; LIVE.pop(mk, None); save_claims(); save_papers()
                     print("نقل لجهاز آخر:", mk.split("|")[-1], "— المتبقي", PAPERS[mk]["frozen"], "ث")
                 sf = d.get("submitfor")                  # تسليم عن طالب (مفتاحه) أو "all" = كل من بدأ ولم يسلّم
                 if sf:
@@ -1665,7 +1682,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 if a is not None and a != ANS.get(k, {}): ANS[k] = a; ANS_DIRTY[0] = True
                 LIVE[k] = {"t": time.time(), "answered": int(d.get("answered", 0)), "total": int(d.get("total", 0)), "remain": int(d.get("remain", 0)),
                            "leaveN": int(d.get("leaveN", 0)), "leaveSec": int(d.get("leaveSec", 0))}
-                return J({"remain": remain_of(k), "msg": STATE["msg"]})
+                return J({"remain": remain_of(k), "msg": STATE["msg"], "paused": "paused" in PAPERS[k]})
         if self.path != "/submit": return self.send("", code=404)
         with LOCK:
             if k in SUBS: s = SUBS[k]; return J({"score": s["score"], "total": s["total"], "dup": True})
@@ -1676,7 +1693,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 ids = [int(x) for x in d["ids"]]; answers = [int(x) for x in str(d["answers"]).split(",")]
                 assert ids == p["ids"] and len(answers) == len(ids) and all(-1 <= a < len(BANK[n]["o"]) for n, a in zip(ids, answers))
             except Exception: return self.send("bad", code=400)
-            now = time.time(); over = int(now - deadline(k))
+            now = time.time(); over = int(now - deadline(k)); settle_pause(p)         # لو كان موقوفاً لحظة التسليم (مثلاً انتهى الامتحان): نثبّت الإيقاف قبل حساب المدة
             got = sum(BANK[n]["marks"] for n, a in zip(ids, answers) if a == BANK[n]["a"])        # مجموع علامات (أوزان) الأسئلة الصحيحة
             W = sum(BANK[n]["marks"] for n in ids)
             if SET["final"]: score, total = num(got / W * SET["final"]), num(SET["final"])           # العلامة النهائية: كل ورقة بتتحوّل لتصير من الرقم نفسه
@@ -1684,7 +1701,8 @@ class H(http.server.BaseHTTPRequestHandler):
             rec = {"key": k, "exam": SET["title"], "grade": who[0], "section": who[1], "name": who[2], "ids": ids, "answers": answers,
                    "score": score, "total": total, "auto": str(d.get("auto", ""))[:40], "time": time.strftime("%Y-%m-%d %H:%M:%S"),
                    "leave": str(d.get("leave", ""))[:60], "late": over if over > GRACE else 0,
-                   "dur": max(0, int(now - p["start"] - p.get("down", 0)))}                 # مدة الحل: من «ابدأ» لـ «تسليم» بساعة السيرفر، بدون وقت توقف السيرفر
+                   "dur": max(0, int(now - p["start"] - p.get("down", 0) - p.get("pz", 0)))}   # مدة الحل: من «ابدأ» لـ «تسليم» بساعة السيرفر، بدون وقت توقف السيرفر وبدون إيقاف المعلم له
+            if p.get("pz"): rec["pause"] = int(p["pz"])
             try:
                 with open(SUBS_FILE, "a", encoding="utf-8") as f: f.write(json.dumps(rec, ensure_ascii=False) + "\n"); f.flush(); os.fsync(f.fileno())
             except OSError as e:

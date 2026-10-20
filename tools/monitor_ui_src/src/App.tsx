@@ -23,6 +23,7 @@ type Student = {
   leaveN?: number;
   leaveSec?: number;
   ago?: number | null;
+  paused?: number;   // موقوف مؤقتاً من المعلم: ثواني منذ الإيقاف (الحقل غير موجود = مش موقوف)
 };
 type Rehearsal = {
   on?: boolean; left?: number; at_in?: number; full?: boolean; joined?: number;
@@ -62,7 +63,7 @@ const SUMMARY: { key: Status; label: string; style: string }[] = [
   { key: 'lost', label: 'انقطع اتصالهم', style: 'lost' },
   { key: 'none', label: 'لم يبدؤوا', style: 'none' },
 ];
-const ATTENTION_LIMITS = { leaveCount: 2, leaveSeconds: 30, lowTimeSeconds: 120, lowAnsweredPercent: 50 };
+const ATTENTION_LIMITS = { leaveCount: 2, leaveSeconds: 30, lowTimeSeconds: 120, lowAnsweredPercent: 50, pausedSeconds: 120 };
 const NAV_LINKS = [
   { href: '/report', text: '📊 التقرير والتحليل', group: 0 },
   { href: '/report.xlsx', text: '⬇ تنزيل Excel', group: 0 },
@@ -324,14 +325,15 @@ function App() {
         result.push({ row, section, reason: `خرج من الصفحة ${num} مرات · ${secs} ث`, urgency: 800 + num * 10 + secs });
       }
       if (row.status === 'done' && (row.late || 0) > 0) result.push({ row, section, reason: `تسليم متأخر ${row.late} ث`, urgency: 700 + (row.late || 0) });
-      if (row.status === 'live' && (row.remain || 9999) < ATTENTION_LIMITS.lowTimeSeconds && row.total && ((row.answered || 0) / row.total) * 100 < ATTENTION_LIMITS.lowAnsweredPercent) {
+      if (row.status === 'live' && row.paused === undefined && (row.remain || 9999) < ATTENTION_LIMITS.lowTimeSeconds && row.total && ((row.answered || 0) / row.total) * 100 < ATTENTION_LIMITS.lowAnsweredPercent) {
         result.push({ row, section, reason: `وقته يقترب وما أجاب إلا ${row.answered || 0} من ${row.total}`, urgency: 600 + (120 - (row.remain || 0)) });
       }
+      if (row.paused !== undefined && row.paused >= ATTENTION_LIMITS.pausedSeconds) result.push({ row, section, reason: `موقوف مؤقتاً منذ ${formatTime(row.paused)}`, urgency: 500 + row.paused });   // تذكير: لا تنسى «متابعة»
     }));
     return result.sort((a, b) => b.urgency - a.urgency);
   }, [data]);
 
-  const getRemain = (row: Student) => Math.max(0, (row.remain || 0) - secondsSinceSync);
+  const getRemain = (row: Student) => row.paused !== undefined ? (row.remain || 0) : Math.max(0, (row.remain || 0) - secondsSinceSync);   // الموقوف وقته متجمّد
   const showModal = (next: Exclude<ModalState, null>) => { setModal(next); setToolsOpen(false); setOpenRowMenu(null); };
 
   const openExtend = (scope: 'student' | 'section' | 'all', row?: Student) => {
@@ -366,6 +368,12 @@ function App() {
       } else if ('move' in command) {
         const row = flatten(next.sections).find((item) => item.key === command.move);
         if (row) { row.status = 'live'; row.ago = 2; }
+      } else if ('pause' in command) {
+        const row = flatten(next.sections).find((item) => item.key === command.pause);
+        if (row) row.paused = 0;
+      } else if ('resume' in command) {
+        const row = flatten(next.sections).find((item) => item.key === command.resume);
+        if (row) delete row.paused;
       } else if ('submitfor' in command) {
         const key = command.submitfor;
         flatten(next.sections).filter((row) => row.status === 'live' || row.status === 'lost').filter((row) => key === 'all' || row.key === key).forEach((row) => {
@@ -632,6 +640,7 @@ function App() {
               {attentionOpen && <div className="attention-list">{attentionItems.map(({ row, section, reason }, index) => <article className="attention-card" key={`${keyFor(row, section)}-${index}`}>
                 <span className="attention-name">{row.name} <small>· {section}</small></span><span className="attention-reason">{reason}</span>
                 <div className="attention-actions">
+                  {row.paused !== undefined && <button className="btn small" type="button" onClick={() => row.key && void runCommand({ resume: row.key })}>▶ متابعة</button>}
                   {row.status === 'lost' ? <>
                     <button className="btn small" type="button" onClick={() => openExtend('student', row)}>+ وقت</button>
                     <button className="btn outline small" type="button" onClick={() => row.key && confirmAction('move', { move: row.key })}>نقل لجهاز آخر</button>
@@ -684,19 +693,22 @@ function App() {
                     const menuItems = row.status === 'done'
                       ? [{ label: 'فتح الورقة', type: 'sheet' }, { label: 'فك الحجز', type: 'release' }]
                       : row.status === 'none' ? [] : [
-                        { label: '+ وقت', type: 'extend' }, { label: 'نقل لجهاز آخر', type: 'move' },
+                        { label: '+ وقت', type: 'extend' },
+                        ...(row.paused !== undefined ? [{ label: '▶ متابعة', type: 'resume' }] : row.status === 'live' ? [{ label: '⏸ إيقاف مؤقت', type: 'pause' }] : []),
+                        { label: 'نقل لجهاز آخر', type: 'move' },
                         { label: 'تسليم عنه', type: 'submit' }, { label: 'فك الحجز', type: 'release' },
                       ];
                     return <tr className={`student-row ${row.status}`} key={id}>
                       <td className="name-cell">{row.name}</td>
-                      <td><span className={`status-pill ${row.status}`}>{STATUS[row.status]}</span>{row.status === 'lost' && row.ago != null && <span className="muted"> منذ <b className="num">{row.ago}</b> ث</span>}</td>
+                      <td><span className={`status-pill ${row.paused !== undefined ? 'paused' : row.status}`}>{row.paused !== undefined ? '⏸ موقوف' : STATUS[row.status]}</span>{row.paused !== undefined ? <span className="muted"> منذ <b className="num">{formatTime(row.paused + secondsSinceSync)}</b></span> : row.status === 'lost' && row.ago != null && <span className="muted"> منذ <b className="num">{row.ago}</b> ث</span>}</td>
                       <td>{hasProgress ? <div className="progress-cell"><span className="num">{row.answered || 0}/{row.total}</span><span className="mini-bar"><i style={{ width: `${percent(row.answered || 0, row.total || 0)}%` }} /></span></div> : <span className="muted">—</span>}</td>
-                      <td>{row.status === 'live' ? <span className={`time-left num ${getRemain(row) < 120 ? 'low' : ''}`}>{formatTime(getRemain(row))}</span> : row.status === 'lost' && row.ago != null ? <span className="muted">منذ <b className="num">{row.ago}</b> ث</span> : row.status === 'done' && row.durtxt ? <span className="muted">استغرق {row.durtxt}</span> : <span className="muted">—</span>}</td>
+                      <td>{row.status === 'live' ? <span className={`time-left num ${row.paused === undefined && getRemain(row) < 120 ? 'low' : ''}`}>{formatTime(getRemain(row))}</span> : row.status === 'lost' && row.ago != null ? <span className="muted">منذ <b className="num">{row.ago}</b> ث</span> : row.status === 'done' && row.durtxt ? <span className="muted">استغرق {row.durtxt}</span> : <span className="muted">—</span>}</td>
                       <td>{leaveDetails !== '—' && leaveDetails ? <span className={`warning-chip ${row.status === 'done' && (row.late || 0) > 0 ? 'late' : ''}`}>{leaveDetails}</span> : <span className="muted">—</span>}{row.status === 'done' && (row.late || 0) > 0 && <span className="warning-chip late">⏱ متأخر {row.late} ث</span>}</td>
                       <td>{row.status === 'done' ? <span className="score num">{row.score ?? 0} / {row.total ?? 0}</span> : <span className="muted">—</span>}</td>
                       <td>{row.status === 'done' ? row.durtxt || <span className="muted">—</span> : <span className="muted">—</span>}</td>
                       <td className="action-cell">
                         {row.status === 'done' && <a className="btn outline small" href={`/sheet?key=${encodeURIComponent(row.key || '')}`} target="_blank" rel="noreferrer">فتح الورقة</a>}
+                        {row.paused !== undefined && <button className="btn small" type="button" onClick={() => row.key && void runCommand({ resume: row.key })}>▶ متابعة</button>}
                         {(row.status === 'live' || row.status === 'lost') && <button className="btn outline small" type="button" onClick={() => openExtend('student', row)}>+ وقت</button>}
                         {menuItems.length > 0 && <span className={`row-menu-wrap ${openRowMenu === id && rowMenuOpensUp ? 'opens-up' : ''}`}>
                           <button className="kebab" type="button" aria-label={`إجراءات ${row.name}`} aria-expanded={openRowMenu === id} onClick={(event) => {
@@ -712,6 +724,8 @@ function App() {
                             {menuItems.map((item) => item.type === 'sheet' ? <a key={item.type} role="menuitem" href={`/sheet?key=${encodeURIComponent(row.key || '')}`} target="_blank" rel="noreferrer" onClick={() => setOpenRowMenu(null)}>{item.label}</a> : <button key={item.type} role="menuitem" type="button" onClick={() => {
                               setOpenRowMenu(null);
                               if (item.type === 'extend') openExtend('student', row);
+                              if (item.type === 'pause' && row.key) void runCommand({ pause: row.key });
+                              if (item.type === 'resume' && row.key) void runCommand({ resume: row.key });
                               if (item.type === 'move' && row.key) confirmAction('move', { move: row.key });
                               if (item.type === 'submit' && row.key) confirmAction('submit', { submitfor: row.key });
                               if (item.type === 'release' && row.key) confirmAction('release', { release: row.key });
