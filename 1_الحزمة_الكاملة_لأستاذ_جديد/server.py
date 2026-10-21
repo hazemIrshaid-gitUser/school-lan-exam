@@ -954,10 +954,10 @@ def export_static(d, secs):
                       f"<td>{html.escape(str(r.get('leave', '')))}</td><td>{link}</td></tr>")
             h += "</table>"
         put(os.path.join(root, home), h, 0)
-        rp = report_page().replace("<a class=btn href=/monitor>المراقبة</a>", f"<a class=btn href='{home}'>الرئيسية</a>").replace("href=/report.xlsx", "href='report.xlsx'")
+        rp = report_page(arch_home=home)
         put(os.path.join(root, "التقرير.html"), rp, 0)
         with open(os.path.join(root, "report.xlsx"), "wb") as f: f.write(build_xlsx())
-        kp = key_page().replace("<a class=btn href=/monitor>المراقبة</a>", f"<a class=btn href='{home}'>الرئيسية</a>").replace(" <a class=btn href=/logout>🔒 قفل</a>", "")
+        kp = key_page(arch_home=home)
         put(os.path.join(root, "الأسئلة_والإجابات.html"), kp, 0)
     finally:
         ROSTER = saved
@@ -1198,7 +1198,48 @@ def build_xlsx():
     return xlsx_bytes(sheets)
 
 # ---------- صفحات المعلم ----------
-CSS = "<meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><style>body{font-family:Tahoma,Arial;max-width:1100px;margin:20px auto;padding:0 12px;background:#f4f6f8}h2{color:#14566b}table{border-collapse:collapse;width:100%;background:#fff;margin:8px 0 20px}td,th{border:1px solid #ccd;padding:6px 8px;text-align:right}th{background:#e8f2f5}.done{background:#e3f5e9}.live{background:#fff8dc}.lost{background:#fde5e5}.none{color:#888}.btn{display:inline-block;padding:6px 12px;background:#14566b;color:#fff;border-radius:6px;text-decoration:none;margin:2px;cursor:pointer;border:0;font:inherit}.btn.red{background:#b3261e}.btn.gray{background:#667}.cards span{display:inline-block;background:#fff;border:1px solid #ccd;border-radius:8px;padding:8px 14px;margin:4px;font-weight:bold}.bar{display:inline-block;background:#14566b;height:14px;vertical-align:middle}</style>"
+CSS = ("<meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><style>"
+       ":root{--p:#14566b;--p2:#0e4355;--ink:#1c2733;--mut:#5d6b7a;--line:#dde3ea;--bg:#f4f6f8;--ok:#1b7f46;--okbg:#e6f6ec;--warn:#9a6200;--warnbg:#fff4d6;--bad:#b3261e;--badbg:#fde8e6}"
+       "*{box-sizing:border-box}html{direction:rtl}body{font-family:Tahoma,'Segoe UI',Arial,sans-serif;max-width:1180px;margin:0 auto;padding:0 14px 30px;background:var(--bg);color:var(--ink);line-height:1.6}"
+       "h2{color:var(--p);font-size:22px;margin:18px 0 8px}h3{font-size:17px;margin:22px 0 8px}a{color:var(--p)}"
+       "table{border-collapse:collapse;width:100%;background:#fff;margin:8px 0 20px;border:1px solid var(--line);border-radius:10px;overflow:hidden}"
+       "td,th{border-top:1px solid #e6ebf0;padding:8px 10px;text-align:right;vertical-align:top}th{background:#eef5f8;color:var(--p);border-top:0}"
+       ".done{background:#e3f5e9}.live{background:#fff8dc}.lost{background:#fde5e5}.none{color:#888}"
+       ".btn{display:inline-block;padding:7px 14px;background:var(--p);color:#fff;border-radius:8px;text-decoration:none;margin:2px;cursor:pointer;border:0;font:inherit;font-size:14px}"
+       ".btn:hover{background:var(--p2)}.btn.red{background:var(--bad)}.btn.gray{background:#667}.btn.ghost{background:#fff;color:var(--p);border:1px solid var(--line)}"
+       ".cards span{display:inline-block;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 14px;margin:4px;font-weight:bold}"
+       ".bar{display:inline-block;background:var(--p);height:14px;vertical-align:middle;border-radius:3px}"
+       ".tnav{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:#fff;border-bottom:1px solid var(--line);margin:0 -14px 14px;padding:10px 14px;box-shadow:0 1px 4px #1c273314}"
+       ".tnav .brand{font-weight:800;font-size:16px;white-space:nowrap;max-width:36ch;overflow:hidden;text-overflow:ellipsis}"
+       ".tnav nav{display:flex;gap:4px;background:#eef2f5;padding:4px;border-radius:12px;overflow-x:auto;max-width:100%}"
+       ".tnav nav a{padding:6px 12px;border-radius:9px;color:var(--mut);text-decoration:none;font-size:13px;font-weight:700;white-space:nowrap}"
+       ".tnav nav a:hover{color:var(--ink)}.tnav nav a.on{background:#fff;color:var(--p);box-shadow:0 1px 3px #1c27331f}.tnav .lock{margin-inline-start:auto}"
+       ".card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}"
+       ".pagehead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:6px 0}.pagehead h2{margin:0}.pagehead small{color:var(--mut)}"
+       ".kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}"
+       ".kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px}.kpi b{display:block;font-size:26px;color:var(--p)}.kpi span{color:var(--mut);font-size:13px}"
+       ".kpi.ok b{color:var(--ok)}.kpi.warn b{color:var(--warn)}.kpi.bad b{color:var(--bad)}"
+       ".charts{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:12px}@media(max-width:700px){.charts{grid-template-columns:1fr}}"
+       ".charts h3{margin:0 0 8px;font-size:15px}.donut{display:block;margin:0 auto;max-width:190px}"
+       ".hist{display:flex;align-items:flex-end;gap:10px;height:200px;padding:6px 6px 0;border-bottom:1px solid var(--line)}"
+       ".hist .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%}.hist .col i{display:block;width:70%;max-width:72px;border-radius:6px 6px 0 0}.hist .col b{font-size:13px}"
+       ".histlab{display:flex;gap:10px}.histlab span{flex:1;text-align:center;font-size:12px;color:var(--mut)}"
+       ".badge{display:inline-block;padding:1px 9px;border-radius:99px;font-size:12px;font-weight:700}.badge.hard{background:var(--badbg);color:var(--bad)}.badge.medium{background:var(--warnbg);color:var(--warn)}.badge.easy{background:var(--okbg);color:var(--ok)}"
+       ".pct{display:flex;align-items:center;gap:8px}.pct i{display:block;height:8px;border-radius:99px;background:var(--ok)}.pct i.mid{background:#d49b20}.pct i.low{background:var(--bad)}"
+       "select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}[hidden]{display:none!important}"
+       ".tw{overflow-x:auto;margin:8px 0 20px}.tw table{margin:0;min-width:640px}"
+       "@media print{.noprint{display:none}.tnav{display:none}body{background:#fff;max-width:none;margin:0;padding:0}.card,.kpi,table{border-radius:0}.tw{overflow:visible}.tw table{min-width:0}}"
+       "</style>")
+TABS = (("monitor", "/monitor", "المراقبة الحية"), ("report", "/report", "التقارير والتحليل"), ("sheet", "/sheet", "ورقات الطلاب"), ("key", "/key", "مفتاح الإجابات"),
+        ("codes", "/codes", "رموز الدخول"), ("health", "/health", "فحص السيرفر"), ("teacher", "/teacher", "معاينة الامتحان"))
+def teacher_nav(active):
+    """شريط تنقل واحد لكل صفحات المعلم (مخفي بالطباعة): اسم الامتحان + التبويبات، وزر القفل لو في كلمة سر. رموز الدخول بتبين بس لو مفعّلة"""
+    tabs = "".join(f"<a href={u}{' class=on aria-current=page' if k == active else ''}>{n}</a>" for k, u, n in TABS if k != "codes" or SET["needCode"])
+    lock = " <a class='btn ghost lock' href=/logout>🔒 قفل</a>" if SET["tpass"] else ""
+    return f"<header class='tnav noprint'><div class=brand>{html.escape(SET['title'])}</div><nav>{tabs}</nav>{lock}</header>"
+def teacher_page(body, active, title="", head=""):
+    """صفحة معلم كاملة: الستايل المشترك + شريط التنقل + المحتوى"""
+    return "<!doctype html>" + CSS + head + f"<title>{html.escape(title)}</title>" + "<body>" + teacher_nav(active) + body
 MONITOR_UI = os.path.join(BASE, "monitor_ui")     # واجهة المراقبة الجديدة: ملفات ثابتة جاهزة (مصدرها tools/monitor_ui_src). لو المجلد مش موجود بتنعرض الصفحة القديمة
 _UI_TYPES = {".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml",
              ".json": "application/json; charset=utf-8", ".ico": "image/x-icon", ".png": "image/png", ".txt": "text/plain; charset=utf-8"}
@@ -1208,7 +1249,8 @@ def monitor_ui_page():
     try:
         with open(os.path.join(MONITOR_UI, "index.html"), encoding="utf-8") as f: page = f.read()
     except OSError: return None
-    cfg = json.dumps({"link": student_link(), "title": SET["title"]}, ensure_ascii=False).replace("<", "\\u003c")     # العنوان نص من المعلم: ما بنسمح بإغلاق وسم script
+    tabs = [[u, n] for k, u, n in TABS if k != "codes" or SET["needCode"]]                                              # نفس تبويبات شريط التنقل بصفحات المعلم الثانية (مصدر واحد)
+    cfg = json.dumps({"link": student_link(), "title": SET["title"], "tabs": tabs, "lock": bool(SET["tpass"])}, ensure_ascii=False).replace("<", "\\u003c")     # العنوان نص من المعلم: ما بنسمح بإغلاق وسم script
     return re.sub(r"window\.MONITOR_CONFIG\s*=\s*\{.*?\};", lambda m: "window.MONITOR_CONFIG = " + cfg + ";", page, count=1, flags=re.S)
 def monitor_ui_asset(rel):
     """ملف ثابت من مجلد monitor_ui (جوّا المجلد بس، حتى لو فيه .. أو رابط رمزي): (بايتات، نوع المحتوى) أو None"""
@@ -1458,17 +1500,53 @@ let wl=null;async function lock(){try{wl=await navigator.wakeLock.request('scree
 lock();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')lock()});
 poll();setInterval(poll,2000);
 </script>"""
-def report_page():
-    ss, qs = section_stats(), question_stats()
-    h = CSS + "<body><h2>تقرير الامتحان</h2><p><a class=btn href=/monitor>المراقبة</a> <a class=btn href=/report.xlsx>تنزيل Excel (علامات الشعب + التحليل)</a></p><h3>ملخص الشعب</h3><table><tr><th>الصف</th><th>الشعبة</th><th>الطلاب</th><th>سلّموا</th><th>المتوسط %</th><th>الأعلى %</th><th>الأقل %</th><th>توزيع العلامات (0-20 / 20-40 / 40-60 / 60-80 / 80-100)</th></tr>"
+PASS_PCT = 50                                               # حد النجاح (% من العلامة الكاملة) للبطاقة والدائرة بصفحة التقرير
+BANDS = ((85, "ممتاز", "85–100%", "#1b7f46"), (75, "جيد جداً", "75–84%", "#14566b"), (65, "جيد", "65–74%", "#3b6fb6"), (50, "مقبول", "50–64%", "#d49b20"), (0, "ضعيف", "أقل من 50%", "#b3261e"))
+def band_of(pct): return next(i for i, b in enumerate(BANDS) if pct >= b[0])
+def rv_block(key, pcts, n_students, hidden):
+    """بلوك التقرير لمجموعة طلاب (كل الشعب أو شعبة): بطاقات الأرقام + دائرة النجاح + أعمدة توزيع العلامات. كل المجموعات بتنكتب بالصفحة (HTML جاهز) والقائمة بتبدّل بينها بدون ما تحسب شي"""
+    n = len(pcts); ok = sum(1 for x in pcts if x >= PASS_PCT); rate = round(100 * ok / n) if n else None
+    kp = (f"<div class=kpis><div class=kpi><span>إجمالي الطلاب</span><b>{n_students}</b></div><div class=kpi><span>سلّموا</span><b>{n}</b></div>"
+          f"<div class=kpi><span>المتوسط %</span><b>{f'{sum(pcts) / n:.1f}' if n else '—'}</b></div>"
+          f"<div class='kpi{'' if rate is None else ' ok' if rate >= PASS_PCT else ' bad'}'><span>نسبة النجاح (من {PASS_PCT}% وما فوق)</span><b>{'—' if rate is None else f'{rate}%'}</b></div>"
+          f"<div class=kpi><span>الأعلى %</span><b>{round(max(pcts)) if n else '—'}</b></div><div class=kpi><span>الأدنى %</span><b>{round(min(pcts)) if n else '—'}</b></div></div>")
+    head = f"<div class=rv data-k='{html.escape(key, True)}'{' hidden' if hidden else ''}>" + kp
+    if not n: return head + "<div class=card>لا يوجد تسليم بعد.</div></div>"
+    counts = [sum(1 for x in pcts if band_of(x) == i) for i in range(len(BANDS))]; mx = max(counts) or 1
+    donut = (f"<svg class=donut viewBox='0 0 36 36' role=img aria-label='نسبة النجاح {rate}%'><circle cx=18 cy=18 r=15.9155 fill=none stroke='#fde8e6' stroke-width=4></circle>"
+             f"<circle cx=18 cy=18 r=15.9155 fill=none stroke='#1b7f46' stroke-width=4 stroke-dasharray='{rate} {100 - rate}' stroke-dashoffset=25></circle>"
+             f"<text x=18 y=19.5 text-anchor=middle font-size=7 font-weight=700 fill='#1c2733'>{rate}%</text></svg>"
+             f"<p style='text-align:center;margin:6px 0 0'><small>نجح {ok} ورسب {n - ok}</small></p>")
+    bars = "".join(f"<div class=col><b>{c}</b><i style='height:{max(2, int(100 * c / mx))}%;background:{b[3]}'></i></div>" for c, b in zip(counts, BANDS))
+    labs = "".join(f"<span>{b[1]}<br><small>{b[2]}</small></span>" for b in BANDS)
+    return head + (f"<div class=charts><div class=card><h3>نسبة النجاح والرسوب</h3>{donut}</div>"
+                   f"<div class=card><h3>توزيع العلامات (عدد الطلاب بكل فئة)</h3><div class=hist>{bars}</div><div class=histlab>{labs}</div></div></div></div>")
+def report_page(arch_home=None):
+    """التقرير: بطاقات وأعمدة بيانية (قائمة تبدّل بين كل الشعب وشعبة معيّنة)، ملخص الشعب، تحليل الأسئلة. arch_home: صفحة الأرشيف (بدون شريط التنقل وروابط نسبية)"""
+    ss, qs = section_stats(), question_stats(); rows = student_rows()
+    acts = (f"<a class=btn href='{html.escape(arch_home, True)}'>الرئيسية</a> <a class=btn href='report.xlsx'>تنزيل Excel (علامات الشعب + التحليل)</a>" if arch_home else "<a class=btn href=/report.xlsx>تنزيل Excel (علامات الشعب + التحليل)</a>") + " <button class='btn ghost' onclick=print()>طباعة</button>"
+    secs = sorted({(r["grade"], r["section"]) for r in rows})
+    sel = "<select id=secf aria-label='الشعبة'><option value=''>كل الشعب</option>" + "".join(f"<option value='{html.escape(g + '|' + s, True)}'>{html.escape(g)} — شعبة {html.escape(s)}</option>" for g, s in secs) + "</select>"
+    done = [r for r in rows if r["status"] == "done"]
+    blocks = rv_block("", [r["score"] / r["total"] * 100 if r["total"] else 0 for r in done], len(rows), False)
+    for g, s in secs:
+        sec = [r for r in rows if r["grade"] == g and r["section"] == s]
+        blocks += rv_block(f"{g}|{s}", [r["score"] / r["total"] * 100 if r["total"] else 0 for r in sec if r["status"] == "done"], len(sec), True)
+    h = (f"<div class=pagehead><h2>تقرير الامتحان</h2><div class=noprint>{sel} {acts}</div></div>"
+         + f"<p><small>{html.escape(SET['title'])}</small></p>" + blocks
+         + "<script>var f=document.getElementById('secf');f.onchange=function(){document.querySelectorAll('.rv').forEach(function(b){b.hidden=b.dataset.k!==f.value})}</script>"
+         + "<h3>ملخص الشعب</h3><div class=tw><table><tr><th>الصف</th><th>الشعبة</th><th>الطلاب</th><th>سلّموا</th><th>المتوسط %</th><th>الأعلى %</th><th>الأقل %</th><th>توزيع العلامات (0-20 / 20-40 / 40-60 / 60-80 / 80-100)</th></tr>")
     for r in sorted(ss, key=lambda r: (r["grade"], r["section"])):
         mx = max(r["dist"]) or 1
         bars = " ".join(f"<span class=bar style='width:{int(40*c/mx)+2}px' title={c}></span>{c}" for c in r["dist"])
         h += f"<tr><td>{html.escape(r['grade'])}</td><td>{html.escape(r['section'])}</td><td>{r['students']}</td><td>{r['submitted']}</td><td>{'' if r['avg'] is None else r['avg']}</td><td>{'' if r['max'] is None else r['max']}</td><td>{'' if r['min'] is None else r['min']}</td><td>{bars}</td></tr>"
-    h += "</table><h3>تحليل الأسئلة (الأصعب أولاً)</h3><table><tr><th>السؤال</th><th>المستوى</th><th>الصفحة</th><th>مرات الظهور</th><th>نسبة الصح %</th><th>أكثر إجابة خاطئة</th><th>ملاحظة</th></tr>"
+    h += "</table></div><h3>تحليل الأسئلة (الأصعب أولاً)</h3><div class=tw><table><tr><th>السؤال</th><th>المستوى</th><th>الصفحة</th><th>مرات الظهور</th><th>نسبة الصح %</th><th>أكثر إجابة خاطئة</th><th>ملاحظة</th></tr>"
     for r in sorted(qs, key=lambda r: (r["pct"] is None, r["pct"] if r["pct"] is not None else 0)):
-        h += f"<tr><td>س{r['n']}</td><td>{LVL.get(r['level'], '')}</td><td>{html.escape(str(r['page']))}</td><td>{r['appeared']}</td><td>{'' if r['pct'] is None else r['pct']}</td><td>{html.escape(r['top_wrong'])}</td><td>{r['note']}</td></tr>"
-    return h + "</table>"
+        pc = "" if r["pct"] is None else f"<div class=pct><span>{r['pct']}</span><i class='{'' if r['pct'] >= 70 else 'mid' if r['pct'] >= 40 else 'low'}' style='width:{max(2, round(r['pct'] * 0.8))}px'></i></div>"
+        h += f"<tr><td>س{r['n']}</td><td><span class='badge {r['level']}'>{LVL.get(r['level'], '')}</span></td><td>{html.escape(str(r['page']))}</td><td>{r['appeared']}</td><td>{pc}</td><td>{html.escape(r['top_wrong'])}</td><td>{r['note']}</td></tr>"
+    h += "</table></div>"
+    if arch_home: return "<!doctype html>" + CSS + "<title>تقرير الامتحان</title><body>" + h
+    return teacher_page(h, "report", "تقرير الامتحان")
 
 # ---------- ورقة الطالب (للمعلم فقط) ----------
 SHEET_CSS = "<style>" + FRAC_CSS + ".q{border:1px solid #bbb;border-radius:6px;padding:8px 10px;margin:8px 0;page-break-inside:avoid}.q.bad{border-color:#b3261e;background:#fff5f4}.q.good{border-color:#2e7d32}.o{margin:2px 14px}.o.right{color:#1b6b2a;font-weight:bold}.o.given.wrongc{color:#b3261e;font-weight:bold}.hd{border-bottom:2px solid #14566b;margin-bottom:8px}.pg{page-break-after:always}.pg:last-child{page-break-after:auto}@media print{.noprint{display:none}body{background:#fff;max-width:none;margin:0}}</style>"
@@ -1490,39 +1568,40 @@ def sheet_html(sub, wrong_only):
     return h + "</div>"
 def sheet_page(q):
     wo = q.get("wrong") == "1"
-    def nav(extra=""): return f"<p class=noprint><a class=btn href=/monitor>المراقبة</a> <a class=btn href=/sheet>قائمة الطلاب</a>{extra}" + (" <a class=btn href=/logout>🔒 قفل</a>" if SET["tpass"] else "") + "</p>"
+    def bar(extra=""): return f"<p class=noprint><a class='btn ghost' href=/sheet>قائمة الطلاب</a>{extra}</p>"
     if q.get("key"):
         sub = SUBS.get(q["key"])
-        if not sub: return CSS + "<body>لا يوجد تسليم لهذا الطالب."
+        if not sub: return teacher_page("لا يوجد تسليم لهذا الطالب.", "sheet", "ورقة طالب")
         tg = f"<a class=btn href='/sheet?key={urllib.parse.quote(q['key'])}{'' if wo else '&wrong=1'}'>{'عرض كل الأسئلة' if wo else 'عرض الخاطئة فقط'}</a> <button class=btn onclick=print()>طباعة</button>"
-        return CSS + SHEET_CSS + "<body>" + nav(" " + tg) + sheet_html(sub, wo)
+        return teacher_page(bar(" " + tg) + sheet_html(sub, wo), "sheet", "ورقة طالب", SHEET_CSS)
     if q.get("g") is not None and q.get("s") is not None:
         subs = [r for r in student_rows() if r["grade"] == q["g"] and r["section"] == q["s"] and r["status"] == "done"]
         tg = f"<a class=btn href='/sheet?g={urllib.parse.quote(q['g'])}&s={urllib.parse.quote(q['s'])}{'' if wo else '&wrong=1'}'>{'عرض كل الأسئلة' if wo else 'عرض الخاطئة فقط'}</a> <button class=btn onclick=print()>طباعة الكل ({len(subs)} ورقة)</button>"
-        return CSS + SHEET_CSS + "<body>" + nav(" " + tg) + "".join(sheet_html(SUBS[r["key"]], wo) for r in subs)
-    rows = student_rows(); h = CSS + "<body><h2>ورقات الطلاب</h2><p><a class=btn href=/monitor>المراقبة</a>" + (" <a class=btn href=/logout>🔒 قفل</a>" if SET["tpass"] else "") + "</p>"
+        return teacher_page(bar(" " + tg) + "".join(sheet_html(SUBS[r["key"]], wo) for r in subs), "sheet", "ورقات الشعبة", SHEET_CSS)
+    rows = student_rows(); h = "<div class=pagehead><h2>ورقات الطلاب</h2></div>"
     for (g, s) in sorted({(r["grade"], r["section"]) for r in rows}):
         sec = [r for r in rows if r["grade"] == g and r["section"] == s]; dn = [r for r in sec if r["status"] == "done"]
         h += f"<h3>{html.escape(g)} — شعبة {html.escape(s)} ({len(dn)} سلّموا)</h3><p><a class=btn target=_blank href='/sheet?g={urllib.parse.quote(g)}&s={urllib.parse.quote(s)}'>طباعة ورقات الشعبة كلها</a></p><table><tr><th>الاسم</th><th>العلامة</th><th></th></tr>"
         for r in dn: h += f"<tr><td>{html.escape(r['name'])}</td><td>{r['score']} / {r['total']}</td><td><a class=btn target=_blank href='/sheet?key={urllib.parse.quote(r['key'])}'>فتح الورقة</a></td></tr>"
         h += "</table>"
-    return h
+    return teacher_page(h, "sheet", "ورقات الطلاب")
 
 def codes_page():
-    nav = "<p class=noprint><a class=btn href=/monitor>المراقبة</a> <button class=btn onclick=print()>طباعة (قصاصات للقص)</button>" + (" <a class=btn href=/logout>🔒 قفل</a>" if SET["tpass"] else "") + "</p>"
-    if not SET["needCode"]: return CSS + "<body>" + nav + "<p>رمز الدخول غير مفعّل. فعّله بـ <b>رمز_الدخول = نعم</b> في settings.txt ثم شغّل السيرفر من جديد.</p>"
-    h = CSS + "<style>.slip{box-sizing:border-box;display:inline-block;width:31%;border:1px dashed #888;padding:8px;margin:4px;vertical-align:top;page-break-inside:avoid;background:#fff}.code{font-size:28px;font-weight:bold;letter-spacing:4px;direction:ltr;display:block;text-align:center;color:#14566b}.sc{page-break-after:always}@media print{.noprint{display:none}body{background:#fff;max-width:none;margin:0}}</style><body>" + nav
-    h += "<p class=noprint>كل طالب بياخذ رمزه بورقة صغيرة (اقصّها) ويكتبه عند بداية الامتحان. الرموز محفوظة بملف codes.json — امسحه لتوليد رموز جديدة. <b>لا تعرض هذه الصفحة على شاشة الصف.</b></p>"
+    pr = "<p class=noprint><button class=btn onclick=print()>طباعة (قصاصات للقص)</button></p>"
+    if not SET["needCode"]: return teacher_page("<p>رمز الدخول غير مفعّل. فعّله بـ <b>رمز_الدخول = نعم</b> في settings.txt ثم شغّل السيرفر من جديد.</p>", "codes", "رموز الدخول", "<style>@media print{.noprint{display:none}body{background:#fff;max-width:none;margin:0}}</style>")
+    head = "<style>.slip{box-sizing:border-box;display:inline-block;width:31%;border:1px dashed #888;padding:8px;margin:4px;vertical-align:top;page-break-inside:avoid;background:#fff}.code{font-size:28px;font-weight:bold;letter-spacing:4px;direction:ltr;display:block;text-align:center;color:#14566b}.sc{page-break-after:always}@media print{.noprint{display:none}body{background:#fff;max-width:none;margin:0}}</style>"
+    h = pr + "<p class=noprint>كل طالب بياخذ رمزه بورقة صغيرة (اقصّها) ويكتبه عند بداية الامتحان. الرموز محفوظة بملف codes.json — امسحه لتوليد رموز جديدة. <b>لا تعرض هذه الصفحة على شاشة الصف.</b></p>"
     for g, secs in ROSTER.items():
         for s, names in secs.items():
             h += f"<div class=sc><h3>{html.escape(g)} — شعبة {html.escape(s)}</h3>"
             for n in names: h += f"<div class=slip>{html.escape(n)}<span class=code>{html.escape(CODES[f'{g}|{s}|{n}'])}</span></div>"
             h += "</div>"
-    return h
+    return teacher_page(h, "codes", "رموز الدخول", head)
 
-def key_page():
-    h = CSS + SHEET_CSS + "<body><p class=noprint><a class=btn href=/monitor>المراقبة</a> <button class=btn onclick=print()>طباعة</button>" + (" <a class=btn href=/logout>🔒 قفل</a>" if SET["tpass"] else "") + "</p>"
-    h += f"<h2>مفتاح الإجابات — {html.escape(SET['title'])}</h2><p>عدد الأسئلة بالبنك: {len(QLIST)} | بالامتحان: {sum(PICK.values())} ({'، '.join(f'{LVL[k]} {v}' for k, v in PICK.items() if v)}) | مجموع علامات الامتحان: {'%s' % total_range(PICK)[0] if total_range(PICK)[0] == total_range(PICK)[1] else '%s إلى %s' % total_range(PICK)}</p>"
+def key_page(arch_home=None):
+    """مفتاح الإجابات. arch_home: صفحة الأرشيف (بدون شريط التنقل)"""
+    top = (f"<p class=noprint><a class=btn href='{html.escape(arch_home, True)}'>الرئيسية</a> " if arch_home else "<p class=noprint>") + "<button class=btn onclick=print()>طباعة</button></p>"
+    h = top + f"<h2>مفتاح الإجابات — {html.escape(SET['title'])}</h2><p>عدد الأسئلة بالبنك: {len(QLIST)} | بالامتحان: {sum(PICK.values())} ({'، '.join(f'{LVL[k]} {v}' for k, v in PICK.items() if v)}) | مجموع علامات الامتحان: {'%s' % total_range(PICK)[0] if total_range(PICK)[0] == total_range(PICK)[1] else '%s إلى %s' % total_range(PICK)}</p>"
     for lv in ("hard", "medium", "easy"):
         qs = [q for q in QLIST if q["level"] == lv]
         if not qs: continue
@@ -1532,7 +1611,8 @@ def key_page():
             for j, o in enumerate(q["o"]): h += f"<div class='o{' right' if j == q['a'] else ''}'>{L[j]}) <span dir={bdir(o)}>{qhtml(o)}</span>{' ✓' if j == q['a'] else ''}</div>"
             if q["sol"]: h += f"<div class=o><small>الحل: {html.escape(q['sol'])}</small></div>"
             h += "</div>"
-    return h
+    if arch_home: return "<!doctype html>" + CSS + SHEET_CSS + "<title>مفتاح الإجابات</title><body>" + h
+    return teacher_page(h, "key", "مفتاح الإجابات", SHEET_CSS)
 
 class H(http.server.BaseHTTPRequestHandler):
     timeout = 20                                      # اتصال معلّق بدون بيانات بينقطع (كان بيضل مفتوح للأبد)
@@ -1936,14 +2016,13 @@ def health_page(d):
         c_ = d["compensation"]; rows.insert(1, row("تعويض الوقت بعد التوقف", (f"{'جهاز السيرفر نام أو تجمّد' if c_.get('sleep') else 'السيرفر كان متوقفاً'} {c_['downtime_s']} ثانية: " + ("التعويض مطفّأ" if c_.get("off") else "أطول من 30 دقيقة، ما عوّضنا تلقائياً" if c_.get("skipped") else f"مدّدنا وقت {c_['students']} طالب")), "warn" if (c_.get("off") or c_.get("skipped")) else "info"))
     warn = "".join(f"<li>{E_(w)}</li>" for w in d["warnings"])
     banner = {"ok": ("ok", "كل شي تمام ✔ السيرفر جاهز"), "warn": ("warn", "السيرفر شغّال، بس في تنبيهات تحت"), "bad": ("bad", "في مشكلة تحتاج تصليح قبل الامتحان")}[d["level"]]
-    return ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><meta http-equiv=refresh content=5><title>فحص السيرفر</title>"
-            "<style>body{font-family:Tahoma,'Segoe UI',Arial;background:#f4f6f8;color:#1c2733;margin:0}.top{background:#14566b;color:#fff;padding:14px 22px}.top h1{margin:0;font-size:22px}"
-            ".wrap{max-width:980px;margin:0 auto;padding:16px}.b{border-radius:10px;padding:12px 16px;font-weight:bold;font-size:18px;margin-bottom:12px}.b.ok{background:#e6f6ec;color:#1b7f4b}.b.warn{background:#fff6d9;color:#9a6b00}.b.bad{background:#fde8e6;color:#b3261e}"
-            "table{border-collapse:collapse;width:100%;background:#fff;border:1px solid #dde3ea;border-radius:10px;overflow:hidden}th,td{padding:9px 12px;border-top:1px solid #e6ebf0;text-align:right;vertical-align:top}th{width:26%;color:#5d6b7a;font-weight:normal;white-space:nowrap}"
-            ".dot{width:30px;text-align:center;font-size:18px}tr.ok .dot{color:#1b7f4b}tr.warn .dot{color:#d39a00}tr.bad .dot{color:#b3261e}tr.info .dot{color:#7a8794}.big{font-size:26px;font-weight:bold;color:#14566b}"
-            "code{background:#eef1f4;padding:1px 6px;border-radius:4px}ul{margin:6px 0 12px;padding-right:22px}a{color:#14566b}small{color:#5d6b7a}</style>"
-            f"<div class=top><h1>🩺 فحص السيرفر</h1><small style='color:#cfe3ea'>بتتحدّث لحالها كل 5 ثواني &nbsp;|&nbsp; <a style='color:#fff' href=/monitor>المراقبة</a></small></div><div class=wrap>"
-            f"<div class='b {banner[0]}'>{banner[1]}</div>" + (f"<ul>{warn}</ul>" if warn else "") + f"<table>{''.join(rows)}</table></div>")
+    hstyle = ("<style>.b{border-radius:10px;padding:12px 16px;font-weight:bold;font-size:18px;margin-bottom:12px}.b.ok{background:#e6f6ec;color:#1b7f4b}.b.warn{background:#fff6d9;color:#9a6b00}.b.bad{background:#fde8e6;color:#b3261e}"
+              "table.hl th{width:26%;background:#fff;color:#5d6b7a;font-weight:normal;white-space:nowrap;border-top:1px solid #e6ebf0}table.hl tr:first-child th,table.hl tr:first-child td{border-top:0}"
+              ".dot{width:30px;text-align:center;font-size:18px}tr.ok .dot{color:#1b7f4b}tr.warn .dot{color:#d39a00}tr.bad .dot{color:#b3261e}tr.info .dot{color:#7a8794}.big{font-size:26px;font-weight:bold;color:#14566b}"
+              "code{background:#eef1f4;padding:1px 6px;border-radius:4px}ul{margin:6px 0 12px;padding-right:22px}small{color:#5d6b7a}</style>")
+    return ("<!doctype html>" + CSS + "<meta http-equiv=refresh content=5><title>فحص السيرفر</title>" + hstyle + "<body>" + teacher_nav("health")
+            + "<div class=pagehead><h2>🩺 فحص السيرفر</h2><small>بتتحدّث لحالها كل 5 ثواني</small></div>"
+            + f"<div class='b {banner[0]}'>{banner[1]}</div>" + (f"<ul>{warn}</ul>" if warn else "") + f"<table class=hl>{''.join(rows)}</table>")
 
 
 PORT = int(os.environ.get("EXAM_PORT", 80))

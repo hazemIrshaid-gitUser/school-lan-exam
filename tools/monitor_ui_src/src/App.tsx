@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { EventStack } from './components/event-stack';
+import { diffEvents, groupEvents, playTone, readPref, studentId, unlockAudio, writePref, type Ev } from './lib/events';
 
 declare global {
   interface Window {
-    MONITOR_CONFIG?: { link?: string; title?: string };
+    MONITOR_CONFIG?: { link?: string; title?: string; tabs?: [string, string][]; lock?: boolean };   // tabs/lock بيحقنهم السيرفر: نفس شريط التنقل اللي بباقي صفحات المعلم
   }
 }
 
@@ -64,15 +66,14 @@ const SUMMARY: { key: Status; label: string; style: string }[] = [
   { key: 'none', label: 'لم يبدؤوا', style: 'none' },
 ];
 const ATTENTION_LIMITS = { leaveCount: 2, leaveSeconds: 30, lowTimeSeconds: 120, lowAnsweredPercent: 50, pausedSeconds: 120 };
-const NAV_LINKS = [
-  { href: '/report', text: '📊 التقرير والتحليل', group: 0 },
-  { href: '/report.xlsx', text: '⬇ تنزيل Excel', group: 0 },
-  { href: '/sheet', text: '🖨 ورقات الطلاب / طباعة', group: 0 },
-  { href: '/key', text: '🔑 مفتاح الإجابات', group: 1 },
-  { href: '/codes', text: '🔢 رموز دخول الطلاب', group: 1 },
-  { href: '/teacher', text: '🔍 معاينة الامتحان كاملاً', group: 1 },
-  { href: '/health', text: '🩺 فحص السيرفر', group: 2 },
-  { href: '/link', text: '🔗 رابط الامتحان بخط كبير', group: 2 },
+const DEFAULT_TABS: [string, string][] = [   // للمعاينة بدون سيرفر؛ السيرفر الحقيقي بيبعت تبويباته (ورموز الدخول بس لو مفعّلة)
+  ['/monitor', 'المراقبة الحية'], ['/report', 'التقارير والتحليل'], ['/sheet', 'ورقات الطلاب'], ['/key', 'مفتاح الإجابات'], ['/health', 'فحص السيرفر'], ['/teacher', 'معاينة الامتحان'],
+];
+const NAV_TABS = window.MONITOR_CONFIG?.tabs?.length ? window.MONITOR_CONFIG.tabs : DEFAULT_TABS;
+const HAS_LOCK = Boolean(window.MONITOR_CONFIG?.lock);
+const NAV_LINKS = [   // أدوات المراقبة نفسها (باقي الصفحات بشريط التنقل)
+  { href: '/report.xlsx', text: '⬇ تنزيل Excel' },
+  { href: '/link', text: '🔗 رابط الامتحان بخط كبير' },
 ];
 const CONFIRM_COPY = {
   release: 'فك الحجز بيخلّي الطالب يبدأ من جديد (من أي جهاز، حتى نفس الجهاز) بورقة ووقت جديدين، وبتضيع إجاباته السابقة، وصفحته الحالية بترجع لشاشة الدخول لحالها. متأكد؟\nإذا بدك يكمل بنفس أسئلته وإجاباته ووقته المتبقي استخدم «نقل لجهاز آخر» بدل هذا.',
@@ -142,6 +143,14 @@ function App() {
   const [copied, setCopied] = useState(false);
   const [extendMinutes, setExtendMinutes] = useState('5');
   const [messageText, setMessageText] = useState('');
+  const [notify, setNotify] = useState(() => readPref('notify', true));   // إشعارات حية (مفعّلة افتراضياً) وصوتها (مطفّأ افتراضياً): بتنحفظ على هذا المتصفح
+  const [sound, setSound] = useState(() => readPref('sound', false));
+  const [events, setEvents] = useState<Ev[]>([]);
+  const notifyRef = useRef(notify);
+  const soundRef = useRef(sound);
+  const eventSeq = useRef(0);
+  const eventSeen = useRef(new Map<string, number>());
+  const startingNow = useRef(new Set<string>());   // ضغطوا «ابدأ» وما وصلت نبضتهم الأولى بعد (مش انقطاع)
   const safeButtonRef = useRef<HTMLButtonElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const mockCycle = useRef(0);
@@ -152,6 +161,12 @@ function App() {
   const largeFixtureApplied = useRef(false);
 
   useEffect(() => { dataRef.current = data; }, [data]);
+  useEffect(() => { notifyRef.current = notify; soundRef.current = sound; }, [notify, sound]);
+  useEffect(() => {
+    if (!sound) return;
+    window.addEventListener('pointerdown', unlockAudio, { once: true });   // بعد تحديث الصفحة المتصفح بيمنع الصوت لحد أول ضغطة
+    return () => window.removeEventListener('pointerdown', unlockAudio);
+  }, [sound]);
   useEffect(() => {
     const hashChange = () => setProjector(window.location.hash === '#big');
     window.addEventListener('hashchange', hashChange);
@@ -213,6 +228,38 @@ function App() {
     return () => window.clearInterval(id);
   }, []);
 
+  const announceChanges = (before: MonitorData, after: MonitorData) => {   // ما بيستعمل غير refs والـ setter: آمن داخل acceptData
+    if (!notifyRef.current) return;
+    const now = Date.now();
+    const fresh = diffEvents(before.sections, after.sections, startingNow.current).filter((draft) => {
+      if (draft.kind === 'done' || draft.kind === 'start' || !draft.student) return true;
+      const id = `${draft.student}|${draft.kind}`, last = eventSeen.current.get(id) || 0;    // طالب بيروح ويجي (انقطع/عاد) ما بنزعج المعلم فيه أكثر من مرة بالدقيقة
+      if (now - last < 60000) return false;
+      eventSeen.current.set(id, now);
+      return true;
+    });
+    const drafts = groupEvents(fresh);
+    if (!drafts.length) return;
+    const at = timeNow();
+    const stamped: Ev[] = drafts.map((draft) => ({ ...draft, id: ++eventSeq.current, at }));
+    setEvents((list) => [...stamped.reverse(), ...list].slice(0, 4));
+    if (soundRef.current) {
+      const level = stamped.some((ev) => ev.level === 'warn') ? 'warn' : stamped.some((ev) => ev.level === 'ok') ? 'ok' : null;   // نغمة وحدة بكل تحديث، وبدون صوت لـ «بدأ/عاد»
+      if (level) playTone(level);
+    }
+  };
+  const closeEvent = useCallback((id: number) => setEvents((list) => list.filter((ev) => ev.id !== id)), []);
+  const toggleNotify = () => {
+    const value = !notify;
+    setNotify(value); writePref('notify', value);
+    if (!value) setEvents([]);
+  };
+  const toggleSound = () => {
+    const value = !sound;
+    setSound(value); writePref('sound', value);
+    if (value) playTone('ok');   // نغمة تجريبية: بتتأكد إن الصوت شغّال وبتفتحه بالمتصفح
+  };
+
   const acceptData = useCallback((next: MonitorData) => {
     if (deterministicState === 'empty' && mockMode) {
       const emptySections = Object.fromEntries(Object.entries(next.sections).map(([name, rows]) => [name, rows.map((row) => ({ ...row, status: 'none' as Status, key: null }))]));
@@ -234,6 +281,7 @@ function App() {
       const expanded = { ...next, sections };
       next = { ...expanded, c: statusCounts(expanded) };
     }
+    if (dataRef.current && !deterministicState) announceChanges(dataRef.current, next);   // dataRef لسا فيه التحديث السابق
     setData(next);
     dataRef.current = next;
     setLastUpdate(timeNow());
@@ -559,12 +607,17 @@ function App() {
     }
   }, [data, mockMode]);
 
-  const toolItems = NAV_LINKS.map((item, index) => (
-    <span key={item.href}>
-      {index > 0 && item.group !== NAV_LINKS[index - 1].group ? <hr /> : null}
-      <a href={item.href} target="_blank" rel="noreferrer" onClick={() => setToolsOpen(false)}>{item.text}</a>
-    </span>
+  const toolItems = NAV_LINKS.map((item) => (
+    <a key={item.href} href={item.href} target="_blank" rel="noreferrer" onClick={() => setToolsOpen(false)}>{item.text}</a>
   ));
+  const trackNavHeight = useCallback((element: HTMLElement | null) => {   // شريط التنقل بيطول لما يلف على الجوال: شريط الفلاتر اللاصق لازم يلزق تحته مش فوقه
+    if (!element) return;
+    const apply = () => document.documentElement.style.setProperty('--nav-h', `${element.offsetHeight}px`);
+    apply();
+    const watcher = new ResizeObserver(apply);
+    watcher.observe(element);
+    return () => watcher.disconnect();
+  }, []);
 
   if (loading && !data) {
     return <main dir="rtl" className="loading-shell" aria-label="جارٍ تحميل شاشة المراقبة"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></main>;
@@ -615,17 +668,21 @@ function App() {
         </main>
       ) : (
         <>
-          <header className="topbar">
-            <div className="top-inner">
-              <strong className="brand">مراقبة الامتحان</strong>
-              <span className="exam-title">{localTitle}</span><span className="spacer" />
-              <span className="live-indicator"><i />تحديث مباشر · <span className="num">{lastUpdate || timeNow()}</span></span>
-              <button className="top-button" type="button" onClick={() => setProjectorMode(true)}>🖥 شاشة كبيرة</button>
-              <div className="top-menu">
+          <header className="tnav" ref={trackNavHeight}>
+            <div className="brand" title={localTitle}>{localTitle}</div>
+            <nav aria-label="صفحات المعلم">
+              {NAV_TABS.map(([href, label]) => <a key={href} href={href} className={href === '/monitor' ? 'on' : undefined} aria-current={href === '/monitor' ? 'page' : undefined}>{label}</a>)}
+            </nav>
+            <span className="spacer" />
+            <span className="live-indicator" title="تحديث مباشر كل 4 ثواني"><i /><span className="num">{lastUpdate || timeNow()}</span></span>
+            <button className="icon-btn" type="button" aria-pressed={notify} aria-label="الإشعارات الحية" title={notify ? 'الإشعارات مفعّلة (اضغط لإيقافها)' : 'الإشعارات متوقفة (اضغط لتفعيلها)'} onClick={toggleNotify}>{notify ? '🔔' : '🔕'}</button>
+            <button className="icon-btn" type="button" aria-pressed={sound} aria-label="صوت الإشعارات" disabled={!notify} title={sound ? 'الصوت مفعّل (اضغط لإيقافه)' : 'الصوت متوقف (اضغط لتفعيله)'} onClick={toggleSound}>{sound ? '🔊' : '🔇'}</button>
+            <button className="top-button" type="button" onClick={() => setProjectorMode(true)}>🖥<span className="btn-text"> شاشة كبيرة</span></button>
+            <div className="top-menu">
               <button className="top-button" type="button" aria-haspopup="menu" aria-expanded={toolsOpen} onClick={() => { setOpenRowMenu(null); setToolsOpen((value) => !value); }}>أدوات ▾</button>
-                {toolsOpen && <div className="popup" role="menu">{toolItems}<hr /><button type="button" onClick={goToRehearsal}>🧪 بروفة الضغط</button></div>}
-              </div>
+              {toolsOpen && <div className="popup" role="menu">{toolItems}<hr /><button type="button" onClick={goToRehearsal}>🧪 بروفة الضغط</button></div>}
             </div>
+            {HAS_LOCK && <a className="top-button" href="/logout">🔒 قفل</a>}
           </header>
           <main className={`wrap ${isOffline ? 'offline-dim' : ''}`}>
             {isOffline && <div className="notice danger" role="alert"><span>انقطع الاتصال بالسيرفر — آخر تحديث <b className="num">{lastUpdate}</b></span><button type="button" onClick={() => void loadData()}>إعادة المحاولة</button></div>}
@@ -792,6 +849,7 @@ function App() {
       )}
 
       {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
+      {notify && !projector && <EventStack events={events} onClose={closeEvent} />}
       {modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null); }}>
         <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" ref={modalRef}>
           <h2 id="modal-title">{modal.title}</h2>
