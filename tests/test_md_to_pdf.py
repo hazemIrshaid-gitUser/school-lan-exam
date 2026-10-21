@@ -41,7 +41,7 @@ def test_real_guide_converts_to_pdf_with_new_sections(tmp_path):
     assert "exam_info.txt" in text and "exam_log.txt" in text and "check_report.txt" in text
 
 
-@pytest.mark.parametrize("prefix", ["00_", "02_"])
+@pytest.mark.parametrize("prefix", ["00_", "02_", "05_"])
 def test_shipped_pdf_matches_current_markdown(prefix):
     """الـ PDF اللي بالحزمة لازم يكون مولّد من آخر نسخة من الـ markdown (ما ينسى حدا يحدّثه بعد تعديل الدليل)"""
     md = next(PKG_SRC.glob(f"_md_sources/{prefix}*.md")).read_text(encoding="utf-8")
