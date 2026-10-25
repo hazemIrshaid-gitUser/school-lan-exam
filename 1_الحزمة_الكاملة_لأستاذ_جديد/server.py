@@ -727,12 +727,19 @@ def parse_key(k):
     g, s, n = p[1:]
     return (g, s, n) if n in ROSTER.get(g, {}).get(s, []) else None
 def make_paper():
-    """السيرفر هو اللي يسحب الأسئلة ويخلطها (مش جهاز الطالب)"""
+    """السيرفر هو اللي يسحب الأسئلة ويخلطها (مش جهاز الطالب).
+    السحب موزّن بعدّاد: كل سؤال بنعدّ كم ورقة طلع فيها، وبنسحب الأقل ظهوراً أول (والتعادل عشوائي)، فتتوزع الأسئلة على كل البنك
+    وما بيتكرر سؤال وفي أسئلة ما طلعت لحدا. العدّاد بيتحسب من PAPERS نفسها (بتتحفظ بالملف) فبيضل صح بعد إعادة تشغيل السيرفر. بتتنادى داخل LOCK"""
+    used = {}
+    for p in PAPERS.values():
+        for n in p.get("ids", ()): used[n] = used.get(n, 0) + 1
     ids = []
     for lv in ("hard", "medium", "easy"):
         fixed = [q["n"] for q in QLIST if q["level"] == lv and q.get("fixed")]          # الأسئلة الثابتة تدخل كل ورقة
         rest = [q["n"] for q in QLIST if q["level"] == lv and not q.get("fixed")]
-        ids += fixed + random.sample(rest, PICK[lv] - len(fixed))
+        random.shuffle(rest)                                                            # التعادل بالعدّاد يتحسم عشوائياً
+        rest.sort(key=lambda n: used.get(n, 0))                                         # sort ثابت: الأقل ظهوراً أول
+        ids += fixed + rest[:PICK[lv] - len(fixed)]
     ids.sort()
     if SET["shuffleQ"]: random.shuffle(ids)
     orders = []
