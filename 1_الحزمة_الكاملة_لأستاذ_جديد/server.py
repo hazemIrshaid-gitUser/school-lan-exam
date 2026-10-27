@@ -93,6 +93,9 @@ MAX_BODY = 1_000_000                                # أكبر جسم طلب م�
 GRACE = 30                                          # ثواني سماح بعد انتهاء الوقت قبل ما نعلّم التسليم "متأخر"
 L = "أبجدهوزحطي"
 LVL = {"hard": "صعب", "medium": "وسط", "easy": "سهل"}
+GLBL = dict(LVL)                                 # اسم كل مجموعة سحب: المستويات الثلاثة، أو قواعد «سحب» من settings.txt (r1, r2...)
+def glabel(k): return GLBL.get(k) or LVL.get(k, str(k))
+def grp(q): return q.get("grp", q["level"])      # مجموعة السحب للسؤال (بدون قواعد = المستوى)
 HEAD = ["الاختبار","الصف","الشعبة","الاسم","العلامة","من","الأسئلة الخاطئة وإجابة الطالب","نوع التسليم","الوقت","الخروج من الصفحة","التأخير (ث)","مدة الحل"]
 
 def mtxt(m):
@@ -227,7 +230,7 @@ def read_table(path, want=()):
 
 YES = {"نعم", "yes", "true", "1", "y", "نعم.", "ايوا", "أجل"}
 NO = {"لا", "no", "false", "0", "n", "لا."}
-def read_settings():
+def read_settings(txt=None):
     cfg = {"title": "الامتحان الإلكتروني", "minutes": 30, "hard": 3, "medium": 6, "easy": 6, "count": 15,
            "shuffleQ": True, "shuffleO": True, "showScore": True, "lockdown": True, "review": "no", "needCode": False, "tpass": "", "qmark": None, "final": None, "comp": True}
     keys = {"عنوان_الامتحان": "title", "المدة_بالدقائق": "minutes", "عدد_الأسئلة_الصعبة": "hard", "عدد_الأسئلة_المتوسطة": "medium",
@@ -236,19 +239,18 @@ def read_settings():
     REVIEW = {"لا": "no", "no": "no", "نعم": "now", "yes": "now", "بعد_الإنهاء": "after"}
     p = os.path.join(BASE, "settings.txt")
     cfg["given"] = set()                                 # الإعدادات اللي انكتبت فعلاً بالملف (الباقي افتراضي)
-    if not os.path.exists(p):                            # الملف اختياري: مشرف المختبر بيعمله لما الأستاذ يطلب إعدادات خاصة
-        cfg["missing"] = True; cfg["title"] = auto_title(); cfg["auto_title"] = True
-        return cfg
-    raw = open(p, "rb").read()
-    if raw[:2] in (bytes([255, 254]), bytes([254, 255])): txt = raw.decode("utf-16")      # المفكرة بخيار «Unicode» بتحفظ UTF-16 (مع BOM)
-    else:
-        try: txt = raw.decode("utf-8-sig")
-        except UnicodeDecodeError: txt = raw.decode("cp1256")
+    if txt is None:                                      # txt: نص جاهز (صفحة الإعدادات بتجرّب النص الجديد قبل ما تكتبه بالملف)
+        if not os.path.exists(p):                        # الملف اختياري: مشرف المختبر بيعمله لما الأستاذ يطلب إعدادات خاصة
+            cfg["missing"] = True; cfg["title"] = auto_title(); cfg["auto_title"] = True
+            return cfg
+        txt = decode_settings(open(p, "rb").read())
     for ln, line in enumerate(txt.splitlines(), 1):
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line: continue
         k, v = [x.strip() for x in line.split("=", 1)]
         k = k.replace(" ", "_")
+        if k == "سحب":                                   # قاعدة سحب: «سحب = الوحدة:الوحدة الأولى | المستوى:سهل | العدد:10»
+            cfg.setdefault("rules", []).append(parse_rule(v, ln)); continue
         if k not in keys: raise DataError(f"settings.txt سطر {ln}: الاسم «{k}» غير معروف")
         f = keys[k]
         if v == "" and f not in ("tpass", "qmark", "final"): continue     # قيمة فاضية = الافتراضي (العنوان تلقائي، العدد = كل الأسئلة...). كلمة السر الفاضية = بدون كلمة سر
@@ -273,6 +275,39 @@ def read_settings():
     if "title" not in cfg["given"] or not cfg["title"].strip():
         cfg["title"] = auto_title(); cfg["auto_title"] = True
     return cfg
+def decode_settings(raw):
+    if raw[:2] in (bytes([255, 254]), bytes([254, 255])): return raw.decode("utf-16")      # المفكرة بخيار «Unicode» بتحفظ UTF-16 (مع BOM)
+    try: return raw.decode("utf-8-sig")
+    except UnicodeDecodeError: return raw.decode("cp1256")
+def norm_hdr(h):
+    """اسم العمود بدون الأقواس: «المرجع (اختياري)» = «المرجع»"""
+    return re.sub(r"\s*[\(（].*?[\)）]", "", str(h)).strip()
+def parse_rule(v, ln):
+    """سطر «سحب»: شروط مفصولة بـ | كل شرط «العمود:القيمة» (أو «العمود~جزء من القيمة»)، والقيمة تقبل بدائل بـ /، و«العدد:رقم» إلزامي"""
+    conds, n = [], None
+    for part in v.split("|"):
+        part = part.strip()
+        if not part: continue
+        m = re.match(r"^(.+?)\s*([:：~])\s*(.+)$", part)
+        if not m: raise DataError(f"settings.txt سطر {ln}: الشرط «{part}» لازم يكون بصيغة العمود:القيمة")
+        col, op, val = norm_hdr(m.group(1)).replace("_", " "), m.group(2), m.group(3).strip()
+        if col == "العدد":
+            vv = val.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
+            if not vv.isdigit() or int(vv) <= 0: raise DataError(f"settings.txt سطر {ln}: «العدد» لازم يكون رقم صحيح أكبر من صفر، لقيت «{val}»")
+            n = int(vv); continue
+        conds.append((col, "~" if op == "~" else ":", [x.strip() for x in val.split("/") if x.strip()]))
+    if n is None: raise DataError(f"settings.txt سطر {ln}: قاعدة سحب بدون «العدد» (مثلاً العدد:10)")
+    if not conds: raise DataError(f"settings.txt سطر {ln}: قاعدة سحب بدون أي شرط — اكتب مثلاً المستوى:سهل")
+    label = "، ".join(f"{c} {'=' if o == ':' else 'يحوي'} {' أو '.join(vs)}" for c, o, vs in conds)
+    return {"conds": conds, "n": n, "ln": ln, "label": label}
+def _rn(col, s):
+    s = str(s).strip().lower()
+    return LVL_IN.get(s, s) if col == "المستوى" else s
+def rule_match(q, conds):
+    for col, op, vals in conds:
+        v = _rn(col, q["cols"].get(col, ""))
+        if not any((x in v) if op == "~" else (v == x) for x in (_rn(col, y) for y in vals)): return False
+    return True
 def auto_title():
     """ما في عنوان بـ settings.txt: عنوان تلقائي فريد لكل امتحان (عنوان ثابت لكل الامتحانات كان رح يخلّي جهاز امتحن عليه طالب
     يقول «تم التسليم مسبقاً» بالامتحان الجاي). ثابت لما ينعاد تشغيل السيرفر بنفس الامتحان: محفوظ بـ state.json، أو من مفاتيح الأوراق الموجودة"""
@@ -456,8 +491,9 @@ def _lost_text(t):
 def load_questions(auto_math=True):
     rows = read_table(find_file("questions"), ("السؤال", "question"))
     out, errs = [], []
+    hdr = [norm_hdr(c) for c in rows[0]]
     for i, r in enumerate(rows[1:], 2):
-        r = [c for c in r] + [""] * (11 - len(r))
+        r = [c for c in r] + [""] * (max(11, len(hdr)) - len(r))
         if not any(r): continue
         q, opts, ans, lvl, page, sol = r[0], [x for x in r[1:5]], r[5], r[6], r[7], r[8]
         mk = r[9].strip().translate(str.maketrans("٠١٢٣٤٥٦٧٨٩٫،,", "0123456789..."))      # العلامة (اختياري): فاضي = 1، وتقبل كسور مثل 0.5 أو 2.5
@@ -480,7 +516,7 @@ def load_questions(auto_math=True):
         if lv is None: errs.append(f"questions سطر {i}: المستوى لازم يكون صعب أو وسط أو سهل (أو فاضي)، لقيت «{lvl}»"); continue
         if SET.get("qmark"): marks = SET["qmark"]                      # علامة_السؤال بالإعدادات بتغلب عمود العلامات بالملف
         f = autoltr if auto_math else (lambda x: x)
-        out.append({"n": len(out) + 1, "level": lv, "page": page, "q": f(with_imgs(q, errs, i)), "o": [f(with_imgs(o, errs, i)) for o in opts], "a": a, "sol": sol, "marks": marks, "fixed": fx in YES, "row": i})
+        out.append({"n": len(out) + 1, "level": lv, "page": page, "q": f(with_imgs(q, errs, i)), "o": [f(with_imgs(o, errs, i)) for o in opts], "a": a, "sol": sol, "marks": marks, "fixed": fx in YES, "row": i, "cols": {h: str(r[j]).strip() for j, h in enumerate(hdr) if h}})
     if errs: raise DataError("\n".join(errs))
     if not out: raise DataError("ملف الأسئلة فاضي")
     return out
@@ -503,7 +539,24 @@ def load_roster():
 def build_page():
     cfg, qs, ros = SET, QLIST, ROSTER
     lv = Counter(q["level"] for q in qs); given = cfg.get("given", set(cfg))
-    if set(lv) <= {""} or all(q.get("autolevel") for q in qs):     # ما في مستويات: نسحب العدد الكلي من الكل (autolevel: لو انبنت الصفحة من جديد)
+    GLBL.clear(); GLBL.update(LVL)
+    rules = cfg.get("rules")
+    if rules:                                                           # قواعد «سحب» من settings.txt: تلغي أعداد المستويات القديمة
+        cols = set().union(*(q["cols"] for q in qs))
+        for r in rules:
+            for col, _, _ in r["conds"]:
+                if col not in cols: raise DataError(f"settings.txt سطر {r['ln']}: ما في عمود اسمه «{col}» بملف الأسئلة — الأعمدة الموجودة: " + "، ".join(sorted(cols)))
+        if given & {"hard", "medium", "easy", "count"}: print("تنبيه: فيه سطور «سحب» بـ settings.txt فتجاهلت عدد_الأسئلة_الصعبة/المتوسطة/السهلة/الكلي")
+        for q in qs: q["grp"] = None
+        pick, bad = {}, []
+        for i, r in enumerate(rules, 1):
+            key = f"r{i}"; GLBL[key] = f"قاعدة {i}: {r['label']}"
+            for q in qs:
+                if q["grp"] is None and rule_match(q, r["conds"]): q["grp"] = key
+            have = sum(1 for q in qs if q["grp"] == key); pick[key] = r["n"]
+            if r["n"] > have: bad.append(f"القاعدة {i} ({r['label']}): مطلوب {r['n']} والموجود {have}" + (" (بعد استبعاد أسئلة القواعد السابقة)" if i > 1 else ""))
+        if bad: raise DataError("عدد الأسئلة بالبنك أقل من المطلوب بقواعد السحب — " + " | ".join(bad))
+    elif set(lv) <= {""} or all(q.get("autolevel") for q in qs):     # ما في مستويات: نسحب العدد الكلي من الكل (autolevel: لو انبنت الصفحة من جديد)
         for q in qs: q["level"] = "medium"; q["autolevel"] = True
         n = cfg["count"] if "count" in given else len(qs)                # العدد مش مكتوب = كل أسئلة البنك
         pick = {"hard": 0, "medium": min(n, len(qs)), "easy": 0}
@@ -514,8 +567,10 @@ def build_page():
         pick = {k: (cfg[k] if k in given else lv[k]) for k in ("hard", "medium", "easy")}     # مستوى مش مكتوب = كل أسئلته
         bad = [f"{LVL[k]}: مطلوب {pick[k]} والموجود {lv[k]}" for k in pick if pick[k] > lv[k]]
         if bad: raise DataError("عدد الأسئلة بالبنك أقل من المطلوب بالامتحان — " + " | ".join(bad))
-    fx = Counter(q["level"] for q in qs if q.get("fixed"))
-    badf = [f"{LVL[k]}: ثوابت {fx[k]} والمطلوب بالامتحان {pick[k]}" for k in pick if fx[k] > pick[k]]
+    if not rules:
+        for q in qs: q["grp"] = q["level"]
+    fx = Counter(grp(q) for q in qs if q.get("fixed"))
+    badf = [f"{glabel(k)}: ثوابت {fx[k]} والمطلوب بالامتحان {pick[k]}" for k in pick if fx[k] > pick[k]]
     if badf: raise DataError("عدد الأسئلة الثابتة (عمود «ثابت») أكبر من عدد أسئلة المستوى المطلوبة بالامتحان — " + " | ".join(badf))
     if cfg["qmark"] and cfg["final"]:                    # الاثنان مكتوبان: لازم يتطابقوا (مثلاً 20 سؤال × 1.5 = 30)
         N = sum(pick.values())
@@ -523,7 +578,7 @@ def build_page():
             raise DataError(f"settings.txt: عدد أسئلة الامتحان ({N}) × علامة_السؤال ({cfg['qmark']}) = {num(N * cfg['qmark'])} لكن العلامة_النهائية {cfg['final']} — صحّح أحدهما أو اترك واحداً منهما فاضياً")
     conf = ("const CONFIG = {examTitle: %s, minutes: %d, pick: %s, shuffleQuestions: %s, shuffleOptions: %s, showScore: %s, oneAttemptPerDevice: true, "
             "serverGrading: true, claimNames: true, lockdown: %s, reviewMode: \"%s\", needCode: %s, finalMark: %s, endpoint: \"/submit\"};" %
-            (json.dumps(cfg["title"], ensure_ascii=False), cfg["minutes"], json.dumps(pick), str(cfg["shuffleQ"]).lower(),
+            (json.dumps(cfg["title"], ensure_ascii=False), cfg["minutes"], json.dumps({"hard": 0, "medium": sum(pick.values()), "easy": 0} if rules else pick), str(cfg["shuffleQ"]).lower(),
              str(cfg["shuffleO"]).lower(), str(cfg["showScore"]).lower(), str(cfg["lockdown"]).lower(), cfg["review"], str(cfg["needCode"]).lower(), json.dumps(cfg["final"])))
     t = open(os.path.join(BASE, "template.html"), encoding="utf-8").read()
     i = t.index("const CONFIG = {"); j = t.index("};", i) + 2
@@ -535,16 +590,16 @@ def build_page():
     cq = []                                    # بنك الأسئلة ما بينحط بالصفحة: كل طالب بياخذ أسئلة ورقته بس من /start (pub_q)
     t = t[:i] + "const QUESTIONS = " + sj(cq) + t[j + 1:]
     t = t.replace("<title>الامتحان الإلكتروني</title>", "<title>%s</title>" % html.escape(cfg["title"]), 1)
-    for k in ("hard", "medium", "easy"):                  # تنبيه: مستوى علاماته مختلفة + سحب عشوائي = مجموع مختلف بين الطلاب
-        ms = sorted({q["marks"] for q in qs if q["level"] == k})
-        if pick[k] and not cfg["final"] and len(ms) > 1 and pick[k] < sum(1 for q in qs if q["level"] == k):
-            print(f"تنبيه: أسئلة مستوى «{LVL[k]}» علاماتها مختلفة {ms} والامتحان يسحب منها عشوائياً — مجموع العلامات رح يختلف من طالب لطالب")
+    for k in pick:                                        # تنبيه: مجموعة علاماتها مختلفة + سحب عشوائي = مجموع مختلف بين الطلاب
+        ms = sorted({q["marks"] for q in qs if grp(q) == k})
+        if pick[k] and not cfg["final"] and len(ms) > 1 and pick[k] < sum(1 for q in qs if grp(q) == k):
+            print(f"تنبيه: أسئلة «{glabel(k)}» علاماتها مختلفة {ms} والامتحان يسحب منها عشوائياً — مجموع العلامات رح يختلف من طالب لطالب")
     return t, pick
 def raw_range(pick):
     """أقل وأعلى مجموع علامات ممكن لورقة طالب"""
     lo = hi = 0
     for k, n in pick.items():
-        ms = sorted(q["marks"] for q in QLIST if q["level"] == k)
+        ms = sorted(q["marks"] for q in QLIST if grp(q) == k)
         lo += sum(ms[:n]); hi += sum(ms[len(ms) - n:]) if n else 0
     return num(lo), num(hi)
 def total_range(pick):
@@ -658,7 +713,7 @@ def check_code(k, given):
     if f[0] >= 5: f[0] = 0; f[1] = now + 60
     return "badcode"
 if SET["needCode"]: init_codes()
-PROTECTED = ("/key", "/teacher", "/sheet", "/codes")      # صفحات المعلم اللي بتحتاج كلمة السر (فيها الإجابات الصحيحة أو رموز الطلاب)
+PROTECTED = ("/key", "/teacher", "/sheet", "/codes", "/settings", "/settings.json")      # صفحات المعلم اللي بتحتاج كلمة السر (فيها الإجابات الصحيحة أو رموز الطلاب)
 TOKENS = set()                               # جلسات المعلم المسجّلة (بالذاكرة فقط: بتنتهي بإطفاء السيرفر)
 TFAIL = [0, 0]                               # محاولات كلمة سر خاطئة [العدد، قفل لحد وقت]
 _DIG = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
@@ -734,9 +789,9 @@ def make_paper():
     for p in PAPERS.values():
         for n in p.get("ids", ()): used[n] = used.get(n, 0) + 1
     ids = []
-    for lv in ("hard", "medium", "easy"):
-        fixed = [q["n"] for q in QLIST if q["level"] == lv and q.get("fixed")]          # الأسئلة الثابتة تدخل كل ورقة
-        rest = [q["n"] for q in QLIST if q["level"] == lv and not q.get("fixed")]
+    for lv in [k for k in ("hard", "medium", "easy") if k in PICK] + [k for k in PICK if k not in ("hard", "medium", "easy")]:
+        fixed = [q["n"] for q in QLIST if grp(q) == lv and q.get("fixed")]          # الأسئلة الثابتة تدخل كل ورقة
+        rest = [q["n"] for q in QLIST if grp(q) == lv and not q.get("fixed")]
         random.shuffle(rest)                                                            # التعادل بالعدّاد يتحسم عشوائياً
         rest.sort(key=lambda n: used.get(n, 0))                                         # sort ثابت: الأقل ظهوراً أول
         ids += fixed + rest[:PICK[lv] - len(fixed)]
@@ -1238,7 +1293,7 @@ CSS = ("<meta charset=utf-8><meta name=viewport content='width=device-width,init
        "@media print{.noprint{display:none}.tnav{display:none}body{background:#fff;max-width:none;margin:0;padding:0}.card,.kpi,table{border-radius:0}.tw{overflow:visible}.tw table{min-width:0}}"
        "</style>")
 TABS = (("monitor", "/monitor", "المراقبة الحية"), ("report", "/report", "التقارير والتحليل"), ("sheet", "/sheet", "ورقات الطلاب"), ("key", "/key", "مفتاح الإجابات"),
-        ("codes", "/codes", "رموز الدخول"), ("health", "/health", "فحص السيرفر"), ("teacher", "/teacher", "معاينة الامتحان"))
+        ("codes", "/codes", "رموز الدخول"), ("settings", "/settings", "إعدادات الامتحان"), ("health", "/health", "فحص السيرفر"), ("teacher", "/teacher", "معاينة الامتحان"))
 def teacher_nav(active):
     """شريط تنقل واحد لكل صفحات المعلم (مخفي بالطباعة): اسم الامتحان + التبويبات، وزر القفل لو في كلمة سر. رموز الدخول بتبين بس لو مفعّلة"""
     tabs = "".join(f"<a href={u}{' class=on aria-current=page' if k == active else ''}>{n}</a>" for k, u, n in TABS if k != "codes" or SET["needCode"])
@@ -1247,6 +1302,315 @@ def teacher_nav(active):
 def teacher_page(body, active, title="", head=""):
     """صفحة معلم كاملة: الستايل المشترك + شريط التنقل + المحتوى"""
     return "<!doctype html>" + CSS + head + f"<title>{html.escape(title)}</title>" + "<body>" + teacher_nav(active) + body
+# ---------- صفحة «إعدادات الامتحان»: بتقرأ وبتكتب نفس settings.txt (الملف يضل هو المصدر) ----------
+REVIEW_OUT = {"no": "لا", "now": "نعم", "after": "بعد_الإنهاء"}
+SPEC = (   # (الحقل، اسم الإعداد بالملف، النوع، العنوان، الشرح، حر = بيتعدّل حتى بعد ما يبدأ الطلاب)
+    ("title", "عنوان_الامتحان", "text", "عنوان الامتحان", "فاضي = عنوان تلقائي جديد لكل امتحان. جهاز الطالب بيتذكر «سلّم هذا الامتحان» حسب العنوان، فلا تكرر عنواناً قديماً.", False),
+    ("minutes", "المدة_بالدقائق", "int", "المدة بالدقائق", "مدة الامتحان لكل طالب.", False),
+    ("final", "العلامة_النهائية", "num", "العلامة النهائية", "الدرجة الكاملة للامتحان (مثلاً 30). فاضي = مجموع علامات الأسئلة.", False),
+    ("qmark", "علامة_السؤال", "num", "علامة السؤال", "علامة كل سؤال. لو كتبتها مع العلامة النهائية لازم يتطابقوا. فاضي = من عمود العلامة بملف الأسئلة.", False),
+    ("shuffleQ", "خلط_الأسئلة", "bool", "خلط ترتيب الأسئلة", "كل طالب بيشوف الأسئلة بترتيب مختلف.", False),
+    ("shuffleO", "خلط_الخيارات", "bool", "خلط ترتيب الخيارات", "كل طالب بيشوف الخيارات بترتيب مختلف.", False),
+    ("showScore", "إظهار_العلامة_للطالب", "bool", "إظهار العلامة للطالب بعد التسليم", "", True),
+    ("review", "مراجعة_الأخطاء", "review", "مراجعة الأخطاء", "لا = الطالب ما يشوف أخطاءه. نعم = بعد التسليم مباشرة (ممكن اللي خلّص يشارك الأجوبة). بعد_الإنهاء = بعد ما تضغط «إنهاء الامتحان».", True),
+    ("lockdown", "منع_النسخ", "bool", "منع النسخ واللصق والزر اليمين", "ردع فقط، مش حماية مطلقة.", False),
+    ("needCode", "رمز_الدخول", "bool", "رمز دخول لكل طالب", "نعم = كل طالب لازم يكتب رمزه (من صفحة رموز الدخول).", False),
+    ("tpass", "كلمة_سر_المعلم", "text", "كلمة سر المعلم", "بتحمي صفحات المعلم اللي فيها الإجابات. بتتغير فوراً. فاضية = بدون كلمة سر (مش مستحسن).", True),
+    ("comp", "تعويض_توقف_السيرفر", "bool", "تعويض وقت توقف السيرفر", "نعم = بنزيد وقت كل طالب بدأ بنفس مدة التوقف (لحد 30 دقيقة).", False),
+    ("hard", "عدد_الأسئلة_الصعبة", "count", "عدد الأسئلة الصعبة", "", False),
+    ("medium", "عدد_الأسئلة_المتوسطة", "count", "عدد الأسئلة المتوسطة", "", False),
+    ("easy", "عدد_الأسئلة_السهلة", "count", "عدد الأسئلة السهلة", "", False),
+    ("count", "عدد_الأسئلة_الكلي", "count", "عدد الأسئلة الكلي (لملف بدون مستويات)", "", False),
+)
+SPEC_BY_KEY = {fk: (f, kind) for f, fk, kind, *_ in SPEC}
+COL_SKIP = {"السؤال", "أ", "ب", "ج", "د", "الجواب", "الحل", "العلامة", "ثابت", "الصف", "الرمز"}
+def settings_started(): return bool(PAPERS or CLAIMS or SUBS)
+def _eff(f, kind):
+    v, given = SET.get(f), f in SET.get("given", set())
+    if kind == "bool": return "نعم" if v else "لا"
+    if kind == "review": return REVIEW_OUT.get(v, "لا")
+    if kind == "count": return str(v) if given else ""
+    if kind == "num": return "" if v is None else str(num(v))
+    if f == "title": return "" if SET.get("auto_title") else str(v)
+    return str(v)
+def _col_value(col, v):
+    v = str(v).strip()
+    if col == "المستوى" and LVL_IN.get(v.lower()): return LVL[LVL_IN[v.lower()]]
+    return v
+def settings_columns():
+    """الأعمدة اللي بتنفع للتوزيع (فيها قيم قليلة متكررة) والأعداد المتاحة، مقروءة من ملف الأسئلة نفسه + أعداد كل زوج أعمدة"""
+    cnt = {}
+    for q in QLIST:
+        for c, v in q.get("cols", {}).items():
+            if c in COL_SKIP or not v.strip(): continue
+            cnt.setdefault(c, Counter())[_col_value(c, v)] += 1
+    first = ("الوحدة", "المستوى")
+    names = sorted((c for c in cnt if len(cnt[c]) <= 40), key=lambda c: (first.index(c) if c in first else 2, c))
+    lvl_order = ["سهل", "وسط", "صعب"]
+    cols = {}
+    for c in names:
+        items = list(cnt[c].items())
+        if c == "المستوى": items.sort(key=lambda x: lvl_order.index(x[0]) if x[0] in lvl_order else 9)
+        cols[c] = [[v, n] for v, n in items]
+    cross = {}
+    for a in names:
+        for b in names:
+            if a == b: continue
+            cc = Counter((_col_value(a, q["cols"].get(a, "")), _col_value(b, q["cols"].get(b, ""))) for q in QLIST)
+            cross[a + "||" + b] = {x + "||" + y: n for (x, y), n in cc.items() if x and y}
+    return names, cols, cross
+def settings_state():
+    names, cols, cross = settings_columns()
+    fields = [{"key": fk, "field": f, "kind": kind, "label": label, "help": hp, "free": free, "value": _eff(f, kind), "given": f in SET.get("given", set()),
+               "placeholder": SET["title"] if f == "title" and SET.get("auto_title") else ""} for f, fk, kind, label, hp, free in SPEC]
+    rules = [{"text": " | ".join(f"{c}{':' if o == ':' else '~'}{'/'.join(vs)}" for c, o, vs in r["conds"]) + f" | العدد:{r['n']}", "conds": [[c, o, vs] for c, o, vs in r["conds"]], "n": r["n"]} for r in SET.get("rules", [])]
+    return {"fields": fields, "rules": rules, "started": settings_started(), "columns": names, "values": cols, "cross": cross, "bank": len(QLIST),
+            "picked": sum(PICK.values()), "tpass_default": SET.get("tpass") == "1234"}
+def edit_settings_text(old, values, rules, drop=()):
+    """يعدّل نص settings.txt بمكانه: يغيّر سطور الإعدادات اللي مذكورة ويضيف الناقص، ويحافظ على التعليقات. rules: قائمة نصوص (None = بدون تغيير)"""
+    out, done, rules_at = [], set(), None
+    for line in old.splitlines():
+        s = line.strip()
+        if s and not s.startswith("#") and "=" in s:
+            k = s.split("=", 1)[0].strip().replace(" ", "_")
+            if k == "سحب" and rules is not None:
+                if rules_at is None: rules_at = len(out)
+                continue
+            if k in values or k in drop:
+                if k in done: continue
+                done.add(k)
+                if k in values: out.append(f"{k} = {values[k]}")
+                continue
+        out.append(line)
+    add = [f"{k} = {v}" for k, v in values.items() if k not in done]
+    if add: out += ([""] if out and out[-1].strip() else []) + add
+    if rules:
+        block = [f"سحب = {r}" for r in rules]
+        if rules_at is not None: out[rules_at:rules_at] = block
+        else: out += ([""] if out and out[-1].strip() else []) + ["# قواعد السحب (مكتوبة من صفحة إعدادات الامتحان)"] + block
+    return "\n".join(out).rstrip("\n") + "\n"
+def _clean_setting(v):
+    v = "" if v is None else str(v)
+    if "\n" in v or "\r" in v: raise DataError("القيم ما بتقبل سطر جديد")
+    return v.strip()
+def apply_settings(d):
+    """يكتب الإعدادات الجديدة بـ settings.txt (بعد ما يجرّبها كلها: لو في خطأ ما بيتغير شي) ويطبّقها فوراً. بعد ما يبدأ أول طالب بتنقفل الإعدادات اللي بتأثر على الأوراق. لازم تتنادى داخل LOCK"""
+    global SET, QLIST, BANK, PAGE, PICK, PREVIEW
+    old_txt = decode_settings(open(os.path.join(BASE, "settings.txt"), "rb").read()) if os.path.exists(os.path.join(BASE, "settings.txt")) else ""
+    if d.get("reset"):                                   # رجوع للافتراضي: بنشيل كل الإعدادات ما عدا كلمة السر (حتى ما تنمسح بالغلط)
+        new_txt = edit_settings_text(old_txt, {}, [], {fk for f, fk, *_ in SPEC if f != "tpass"})
+    else:
+        raw, rules = d.get("values", {}), d.get("rules", [])
+        if not isinstance(raw, dict) or not isinstance(rules, list): raise DataError("طلب غير صالح")
+        given, vals = SET.get("given", set()), {}
+        for fk, v in raw.items():
+            if fk not in SPEC_BY_KEY: raise DataError(f"إعداد غير معروف: {fk}")
+            f, kind = SPEC_BY_KEY[fk]; v = _clean_setting(v)
+            if f in given or v != _eff(f, kind): vals[fk] = v
+        lines = []
+        for r in rules:
+            r = _clean_setting(r)
+            if r: parse_rule(r, len(lines) + 1); lines.append(r)
+        new_txt = edit_settings_text(old_txt, vals, lines)
+    newcfg = read_settings(new_txt)
+    if settings_started():
+        bad = []
+        for f, fk, kind, label, _, free in SPEC:
+            if free: continue
+            a, b = SET.get(f), newcfg.get(f)
+            if kind == "count": a = SET[f] if f in SET["given"] else None; b = newcfg[f] if f in newcfg["given"] else None
+            if a != b: bad.append(label)
+        sig = lambda c: [(r["conds"], r["n"]) for r in c.get("rules", [])]
+        if sig(SET) != sig(newcfg): bad.append("قواعد السحب")
+        if bad: raise DataError("الامتحان بدأ، فهذه الإعدادات مقفلة: " + "، ".join(bad) + ". ابدأ امتحاناً جديداً من شاشة المراقبة أولاً.")
+    snap = (SET, QLIST, BANK, PAGE, PICK, PREVIEW)
+    try:                                                 # نجرّب كل شي قبل ما نكتب الملف: الأسئلة والصفحة والمعاينة
+        SET = newcfg; QLIST = load_questions(); BANK = {q["n"]: q for q in QLIST}; PAGE, PICK = build_page(); PREVIEW = build_preview()
+    except BaseException:
+        SET, QLIST, BANK, PAGE, PICK, PREVIEW = snap; raise
+    path = os.path.join(BASE, "settings.txt")
+    if old_txt:                                          # نسخة احتياطية قبل كل حفظ (آخر 50)
+        bdir = os.path.join(BASE, "نسخ_الإعدادات"); os.makedirs(bdir, exist_ok=True)
+        nm = "settings_" + time.strftime("%Y%m%d_%H%M%S"); i = 0
+        while os.path.exists(os.path.join(bdir, nm + (f"_{i}" if i else "") + ".txt")): i += 1          # حفظين بنفس الثانية: ما نكتب فوق النسخة الأولى
+        atomic_write(os.path.join(bdir, nm + (f"_{i}" if i else "") + ".txt"), old_txt)
+        olds = sorted(f for f in os.listdir(bdir) if f.startswith("settings_") and f.endswith(".txt"))
+        for f in olds[:-50]:
+            try: os.remove(os.path.join(bdir, f))
+            except OSError: pass
+    atomic_write(path, new_txt)
+    try: SET_MTIME[0] = os.path.getmtime(path)
+    except OSError: pass
+    if STATE.get("auto_title") != (SET["title"] if SET.get("auto_title") else None):
+        if SET.get("auto_title"): STATE["auto_title"] = SET["title"]
+        else: STATE.pop("auto_title", None)
+        save_state()
+    if SET["needCode"]: init_codes()
+    return {"ok": True, "picked": sum(PICK.values())}
+SETTINGS_BODY = r"""<style>
+.st h2{margin:0 0 4px;font-size:18px}.st .sub{color:#5d6b7a;font-size:13px;margin:0 0 10px}
+.st .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.st label{display:block;font-size:13px;color:#33414f}.st label small{display:block;color:#7a8794;font-size:12px;margin-top:2px;line-height:1.5}
+.st input,.st select,.st textarea{font:inherit;width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:3px;box-sizing:border-box}
+.st input:disabled,.st select:disabled{background:#f1f3f5;color:#7a8794}
+.st .sel{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:6px 0 12px}.st .sel label{min-width:170px;flex:0 1 220px}
+.st .units{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+.st .unit{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#f8fafb}
+.st .unit .hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}.st .unit .hd b{font-size:15px}.st .unit .hd span{font-size:12px;color:#5d6b7a}
+.st .cells{display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px}
+.st .over{border-color:#b3261e!important;background:#fdeceb!important}
+.st .kp{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}.st .kp div{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px}.st .kp small{display:block;color:#5d6b7a;font-size:12px}.st .kp b{font-size:21px}
+.st .wbox{background:#fff4d6;border:1px solid #ecd48a;border-radius:8px;padding:8px 12px;font-size:13px;margin:8px 0}
+.st .err{color:#b3261e;font-size:13px;margin:8px 0;white-space:pre-wrap}.st .okm{color:#1b7f46;font-size:13px;margin:8px 0}
+.st .radios{display:flex;gap:16px;flex-wrap:wrap;margin:6px 0 10px;font-size:14px}.st .radios label{display:flex;gap:6px;align-items:center;color:inherit}.st .radios input{width:auto;margin:0}
+.st textarea{min-height:110px;direction:rtl;font-family:Consolas,Tahoma,monospace;font-size:13px}
+</style>
+<div class="st" id="st"><p class="sub">جاري التحميل…</p></div>
+<script>
+(function(){
+const root=document.getElementById('st');let S=null,mode='level',c1='',c2='',grid={},gen=0;
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function load(){
+  try{const r=await fetch('/settings.json',{cache:'no-store'});if(r.status!==200)throw 0;S=await r.json()}catch(e){root.innerHTML='<p class="err">تعذّر تحميل الإعدادات. افتح هذه الصفحة من جهاز السيرفر (localhost).</p>';return}
+  initDist();render();
+}
+function gridable(){
+  const rs=S.rules;if(!rs.length)return null;let a=null,b=null;
+  for(const r of rs){
+    if(r.conds.length<1||r.conds.length>2)return null;
+    if(r.conds.some(c=>c[1]!==':'||c[2].length!==1))return null;
+    const ca=r.conds[0][0],cb=r.conds.length>1?r.conds[1][0]:'';
+    if(a===null){a=ca;b=cb}else if(a!==ca||b!==cb)return null;
+  }
+  if(!S.columns.includes(a)||(b&&!S.columns.includes(b)))return null;
+  return [a,b];
+}
+function initDist(){
+  const g=gridable();grid={};
+  if(S.rules.length){
+    if(g){mode='grid';c1=g[0];c2=g[1];for(const r of S.rules){grid[r.conds[0][2][0]+'||'+(r.conds.length>1?r.conds[1][2][0]:'')]=r.n}}
+    else mode='text';
+  }else{mode='level';c1=S.columns.includes('الوحدة')?'الوحدة':(S.columns[0]||'');c2=S.columns.includes('المستوى')&&c1!=='المستوى'?'المستوى':''}
+}
+function avail(v1,v2){
+  if(!c2){const e=(S.values[c1]||[]).find(x=>x[0]===v1);return e?e[1]:0}
+  return (S.cross[c1+'||'+c2]||{})[v1+'||'+v2]||0;
+}
+function fieldHtml(f){
+  const lock=S.started&&!f.free,d=lock?' disabled':'',h=f.help?`<small>${esc(f.help)}</small>`:'';
+  let ctl;
+  if(f.kind==='bool')ctl=`<select data-fk="${f.key}"${d}><option${f.value==='نعم'?' selected':''}>نعم</option><option${f.value==='لا'?' selected':''}>لا</option></select>`;
+  else if(f.kind==='review')ctl=`<select data-fk="${f.key}"${d}>${['لا','نعم','بعد_الإنهاء'].map(o=>`<option${f.value===o?' selected':''}>${o}</option>`).join('')}</select>`;
+  else ctl=`<input data-fk="${f.key}" value="${esc(f.value)}" placeholder="${esc(f.placeholder||(f.kind==='num'?'فاضي = غير مفعّل':''))}"${d}>`;
+  return `<label>${esc(f.label)}${ctl}${h}</label>`;
+}
+function render(){
+  const general=S.fields.filter(f=>f.kind!=='count'),legacy=S.fields.filter(f=>f.kind==='count');
+  let h='';
+  if(S.started)h+='<div class="wbox">🔒 بدأ الامتحان: الإعدادات اللي بتأثر على أوراق الطلاب مقفلة. المفتوح بس: كلمة السر وإظهار العلامة ومراجعة الأخطاء. لتعديل الباقي ابدأ امتحاناً جديداً من شاشة المراقبة.</div>';
+  if(S.tpass_default)h+='<div class="wbox">⚠ كلمة سر المعلم هي الافتراضية (1234): غيّرها من هون.</div>';
+  h+=`<div class="card"><h2>الإعدادات العامة</h2><p class="sub">كل تعديل بينكتب بملف settings.txt (ونسخة احتياطية قبل كل حفظ).</p><div class="grid">${general.map(fieldHtml).join('')}</div></div>`;
+  h+='<div class="card"><h2>توزيع الأسئلة</h2><p class="sub">الأعمدة والقيم والأعداد المتاحة مقروءة من ملف الأسئلة نفسه.</p>';
+  const dd=S.started?' disabled':'';
+  h+=`<div class="radios"><label><input type="radio" name="md" value="grid"${mode==='grid'?' checked':''}${dd}> بالجدول (حسب عمود)</label><label><input type="radio" name="md" value="level"${mode==='level'?' checked':''}${dd}> حسب المستوى فقط (بدون قواعد)</label><label><input type="radio" name="md" value="text"${mode==='text'?' checked':''}${dd}> قواعد نصية متقدمة</label></div>`;
+  h+='<div id="dist"></div></div>';
+  h+='<div class="kp"><div><small>مجموع أسئلة الورقة</small><b id="k1">0</b></div><div><small>علامة كل سؤال</small><b id="k2">-</b></div><div><small>العلامة الكاملة</small><b id="k3">-</b></div><div><small>أسئلة البنك</small><b>'+S.bank+'</b></div></div>';
+  h+='<div id="msg"></div><div><button class="btn" id="save">حفظ الإعدادات</button><button class="btn" id="reset" style="background:#5d6b7a"'+(S.started?' disabled':'')+'>رجوع للافتراضي</button></div>';
+  root.innerHTML=h;
+  root.querySelectorAll('input[name=md]').forEach(r=>r.onchange=()=>{mode=r.value;if(mode==='grid'&&!c1)c1=S.columns[0]||'';renderDist();totals()});
+  root.querySelectorAll('[data-fk]').forEach(e=>e.addEventListener('input',totals));
+  $('save').onclick=save;$('reset').onclick=doReset;
+  renderDist();
+}
+const $=id=>document.getElementById(id);
+function renderDist(){
+  const box=$('dist'),dd=S.started?' disabled':'';let h='';
+  if(mode==='level'){
+    const lg=S.fields.filter(f=>f.kind==='count');
+    h+='<p class="sub">كم سؤال يطلع لكل طالب من كل مستوى. فاضي = كل أسئلة المستوى. (ملف بدون مستويات: استعمل العدد الكلي.)</p><div class="grid">'+lg.map(fieldHtml).join('')+'</div>';
+  }else if(mode==='grid'){
+    const opts=(sel,none)=>(none?'<option value="">بدون تقسيم</option>':'')+S.columns.map(c=>`<option${c===sel?' selected':''}>${esc(c)}</option>`).join('');
+    h+=`<div class="sel"><label>وزّع حسب عمود<select id="c1"${dd}>${opts(c1,false)}</select></label><label>وداخل كل قيمة حسب عمود<select id="c2"${dd}>${opts(c2,true)}</select></label></div>`;
+    if(!c1)h+='<p class="sub">ما في أعمدة مناسبة بملف الأسئلة (لازم عمود مثل «الوحدة»).</p>';
+    else{
+      const v1=(S.values[c1]||[]),v2=c2?(S.values[c2]||[]):[['',0]];
+      h+='<div class="units">'+v1.map(([a,na])=>`<div class="unit"><div class="hd"><b>${esc(a)}</b><span>المتاح ${na} سؤال</span></div><div class="cells">`+v2.map(([b])=>{
+        const av=avail(a,b),k=a+'||'+b,val=grid[k]||'';
+        return `<label>${c2?esc(b):'العدد'} <span style="color:#7a8794">(متاح ${av})</span><input type="number" min="0" data-g="${esc(k)}" data-av="${av}" value="${val}"${dd}></label>`}).join('')+'</div><div class="sub" data-sub="'+esc(a)+'" style="margin:6px 0 0"></div></div>').join('')+'</div>';
+    }
+  }else{
+    const cur=S.rules.map(r=>r.text).join('\n');
+    h+='<p class="sub">سطر لكل قاعدة، بالصيغة: <b dir="ltr">العمود:القيمة | العمود:القيمة | العدد:10</b>. «~» بدل «:» = القيمة تحتوي الكلمة. بدائل بـ / مثل وسط/صعب.</p>'
+     +`<textarea id="rt"${dd} spellcheck="false">${esc(window.__rt!==undefined?window.__rt:cur)}</textarea>`;
+  }
+  box.innerHTML=h;
+  if($('c1'))$('c1').onchange=e=>{c1=e.target.value;if(c2===c1)c2='';grid={};renderDist();totals()};
+  if($('c2'))$('c2').onchange=e=>{c2=e.target.value;if(c2===c1)c2='';grid={};renderDist();totals()};
+  box.querySelectorAll('[data-g]').forEach(i=>i.addEventListener('input',totals));
+  if($('rt'))$('rt').addEventListener('input',e=>{window.__rt=e.target.value});
+  totals();
+}
+function gridCells(){return [...root.querySelectorAll('[data-g]')].map(i=>({k:i.dataset.g,n:parseInt(i.value)||0,av:+i.dataset.av,el:i}))}
+function val(fk){const e=root.querySelector(`[data-fk="${fk}"]`);return e?e.value:''}
+function totals(){
+  let tot=0;
+  if(mode==='grid'){
+    const per={};
+    gridCells().forEach(c=>{tot+=c.n;c.el.classList.toggle('over',c.n>c.av);const u=c.k.split('||')[0];per[u]=(per[u]||0)+c.n});
+    root.querySelectorAll('[data-sub]').forEach(e=>{e.textContent='من هذه القيمة: '+(per[e.dataset.sub]||0)+' سؤال'});
+  }else if(mode==='level'){
+    ['عدد_الأسئلة_الصعبة','عدد_الأسئلة_المتوسطة','عدد_الأسئلة_السهلة'].forEach(k=>{tot+=parseInt(val(k))||0});
+    if(!tot)tot=S.picked;
+  }else{
+    const t=(window.__rt!==undefined?window.__rt:S.rules.map(r=>r.text).join('\n')).split('\n');
+    t.forEach(l=>{const m=l.match(/العدد\s*:\s*(\d+)/);if(m)tot+=+m[1]});
+  }
+  const fin=parseFloat(val('العلامة_النهائية'))||0,qm=parseFloat(val('علامة_السؤال'))||0;
+  $('k1').textContent=tot;
+  $('k3').textContent=fin||(qm&&tot?Math.round(qm*tot*100)/100:'-');
+  $('k2').textContent=qm||(fin&&tot?Math.round(fin/tot*100)/100:'-');
+}
+function msg(t,ok){$('msg').innerHTML=t?`<div class="${ok?'okm':'err'}">${esc(t)}</div>`:''}
+function collect(){
+  const values={};
+  root.querySelectorAll('[data-fk]').forEach(e=>{if(!e.disabled)values[e.dataset.fk]=e.value});
+  let rules=[];
+  if(mode==='grid'){
+    rules=gridCells().filter(c=>c.n>0).map(c=>{const [a,b]=c.k.split('||');return c2?`${c1}:${a} | ${c2}:${b} | العدد:${c.n}`:`${c1}:${a} | العدد:${c.n}`});
+    if(!rules.length)return {error:'اكتب عدداً واحداً على الأقل بالجدول.'};
+  }else if(mode==='text'){
+    rules=(window.__rt!==undefined?window.__rt:S.rules.map(r=>r.text).join('\n')).split('\n').map(x=>x.replace(/^\s*سحب\s*=\s*/,'').trim()).filter(Boolean);
+    if(!rules.length)return {error:'اكتب قاعدة واحدة على الأقل، أو اختر طريقة ثانية.'};
+  }else{
+    ['عدد_الأسئلة_الصعبة','عدد_الأسئلة_المتوسطة','عدد_الأسئلة_السهلة','عدد_الأسئلة_الكلي'].forEach(k=>{if(!(k in values))values[k]=val(k)});
+  }
+  if(mode!=='level'&&!S.started)['عدد_الأسئلة_الصعبة','عدد_الأسئلة_المتوسطة','عدد_الأسئلة_السهلة','عدد_الأسئلة_الكلي'].forEach(k=>values[k]='');
+  return {values,rules};
+}
+async function post(o){
+  const r=await fetch('/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Exam-Action':'1'},body:JSON.stringify(o)});
+  let j={};try{j=await r.json()}catch(e){}
+  return {ok:r.ok&&j.ok,error:j.error||(r.status===403?'للمعلم فقط. سجّل الدخول من جديد.':'تعذّر الحفظ ('+r.status+')'),j};
+}
+async function save(){
+  msg('');const o=collect();if(o.error){msg(o.error,false);return}
+  if(mode==='grid'){const bad=gridCells().filter(c=>c.n>c.av);if(bad.length){msg('في أعداد أكبر من المتاح (الخانات الحمراء).',false);return}}
+  $('save').disabled=true;
+  try{const res=await post(o);if(!res.ok){msg(res.error,false);return}
+    window.__rt=undefined;await load();msg('تم الحفظ وتطبيق الإعدادات ✓ (أسئلة كل ورقة: '+res.j.picked+')',true)}
+  catch(e){msg('تعذّر الاتصال بالسيرفر.',false)}finally{const b=$('save');if(b)b.disabled=false}
+}
+async function doReset(){
+  if(!confirm('رجوع كل الإعدادات للافتراضي (كلمة السر ما بتتغير)؟ بتنحفظ نسخة احتياطية قبل.'))return;
+  msg('');try{const res=await post({reset:true});if(!res.ok){msg(res.error,false);return}
+    window.__rt=undefined;await load();msg('رجعت الإعدادات للافتراضي ✓',true)}catch(e){msg('تعذّر الاتصال بالسيرفر.',false)}
+}
+load();
+})();
+</script>
+"""
+def settings_page():
+    return teacher_page(SETTINGS_BODY, "settings", "إعدادات الامتحان")
 MONITOR_UI = os.path.join(BASE, "monitor_ui")     # واجهة المراقبة الجديدة: ملفات ثابتة جاهزة (مصدرها tools/monitor_ui_src). لو المجلد مش موجود بتنعرض الصفحة القديمة
 _UI_TYPES = {".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml",
              ".json": "application/json; charset=utf-8", ".ico": "image/x-icon", ".png": "image/png", ".txt": "text/plain; charset=utf-8"}
@@ -1608,11 +1972,11 @@ def codes_page():
 def key_page(arch_home=None):
     """مفتاح الإجابات. arch_home: صفحة الأرشيف (بدون شريط التنقل)"""
     top = (f"<p class=noprint><a class=btn href='{html.escape(arch_home, True)}'>الرئيسية</a> " if arch_home else "<p class=noprint>") + "<button class=btn onclick=print()>طباعة</button></p>"
-    h = top + f"<h2>مفتاح الإجابات — {html.escape(SET['title'])}</h2><p>عدد الأسئلة بالبنك: {len(QLIST)} | بالامتحان: {sum(PICK.values())} ({'، '.join(f'{LVL[k]} {v}' for k, v in PICK.items() if v)}) | مجموع علامات الامتحان: {'%s' % total_range(PICK)[0] if total_range(PICK)[0] == total_range(PICK)[1] else '%s إلى %s' % total_range(PICK)}</p>"
-    for lv in ("hard", "medium", "easy"):
-        qs = [q for q in QLIST if q["level"] == lv]
+    h = top + f"<h2>مفتاح الإجابات — {html.escape(SET['title'])}</h2><p>عدد الأسئلة بالبنك: {len(QLIST)} | بالامتحان: {sum(PICK.values())} ({'، '.join(f'{glabel(k)} {v}' for k, v in PICK.items() if v)}) | مجموع علامات الامتحان: {'%s' % total_range(PICK)[0] if total_range(PICK)[0] == total_range(PICK)[1] else '%s إلى %s' % total_range(PICK)}</p>"
+    for lv in (list(PICK) + ["_out"] if any(k not in LVL for k in PICK) else ("hard", "medium", "easy")):
+        qs = [q for q in QLIST if (grp(q) == lv if lv != "_out" else grp(q) not in PICK)]
         if not qs: continue
-        h += f"<h3>{LVL[lv]} ({len(qs)})</h3>"
+        h += f"<h3>{glabel(lv) if lv != '_out' else 'أسئلة خارج قواعد السحب (ما رح تظهر بالامتحان)'} ({len(qs)})</h3>"
         for q in qs:
             h += f"<div class='q'><b>س{q['n']}</b> <small>(سطر {q['row']} بالملف{' — ' + html.escape(str(q['page'])) if q['page'] else ''} — {mtxt(key_mark(q['marks']))})</small> <span dir={bdir(q['q'])}>{qhtml(q['q'])}</span>"
             for j, o in enumerate(q["o"]): h += f"<div class='o{' right' if j == q['a'] else ''}'>{L[j]}) <span dir={bdir(o)}>{qhtml(o)}</span>{' ✓' if j == q['a'] else ''}</div>"
@@ -1682,7 +2046,7 @@ class H(http.server.BaseHTTPRequestHandler):
             if not self.teacher(): return self.not_local(path)
             a = monitor_ui_asset(urllib.parse.unquote(path[len("/monitor-ui/"):]))
             return self.send(a[0], a[1], extra={"Cache-Control": "no-cache"}) if a else self.send("غير موجود", code=404)
-        if path in ("/monitor", "/monitor-old", "/monitor.json", "/admin", "/report", "/report.xlsx", "/sheet", "/key", "/codes", "/teacher"):
+        if path in ("/monitor", "/monitor-old", "/monitor.json", "/admin", "/report", "/report.xlsx", "/sheet", "/key", "/codes", "/teacher", "/settings", "/settings.json"):
             if not self.teacher(): return self.not_local(path)
             with LOCK:
                 if path in ("/monitor", "/admin"):
@@ -1693,6 +2057,8 @@ class H(http.server.BaseHTTPRequestHandler):
                     for r in rows: secs[f"{r['grade']} — شعبة {r['section']}"].append(r)
                     c = Counter(r["status"] for r in rows); reh_tick()
                     return self.send(json.dumps({"sections": secs, "closed": bool(STATE["closed_at"]), "msg": STATE["msg"]["text"], "comp": STATE.get("comp"), "bank_changed": bank_changed(), "reh": reh_summary(), "c": {k: c.get(k, 0) for k in ("done", "live", "lost", "none")}}, ensure_ascii=False), "application/json; charset=utf-8")
+                if path == "/settings": return self.send(settings_page(), "text/html; charset=utf-8", extra={"Cache-Control": "no-store"})
+                if path == "/settings.json": return self.send(json.dumps(settings_state(), ensure_ascii=False), "application/json; charset=utf-8", extra={"Cache-Control": "no-store"})
                 if path == "/key": return self.send(key_page(), "text/html; charset=utf-8")
                 if path == "/teacher": return self.send(PREVIEW, "text/html; charset=utf-8")
                 if path == "/codes": return self.send(codes_page(), "text/html; charset=utf-8")
@@ -1731,6 +2097,14 @@ class H(http.server.BaseHTTPRequestHandler):
             TFAIL[0] += 1
             if TFAIL[0] >= 5: TFAIL[0] = 0; TFAIL[1] = now + 30; print("تنبيه: محاولات كثيرة خاطئة لكلمة سر المعلم — القفل 30 ثانية")
             return J({"ok": False})
+        if self.path == "/settings":                    # حفظ الإعدادات من صفحة «إعدادات الامتحان» (للمعلم فقط، وبكلمة السر لو موجودة)
+            if not self.teacher() or self.headers.get("X-Exam-Action") != "1": return self.send("للمعلم فقط", code=403)
+            refresh_tpass()
+            if SET["tpass"] and not self.authed(): return self.send("للمعلم فقط", code=403)
+            with LOCK:
+                try: return J(apply_settings(d))
+                except DataError as e: return J({"ok": False, "error": str(e)}, 400)
+                except OSError as e: return J({"ok": False, "error": f"تعذّرت كتابة الملف: {e}"}, 500)
         if self.path == "/monitor":                     # أوامر المعلم: POST + ترويسة مخصصة (تمنع الطلبات من صفحات خارجية)
             if not self.teacher() or self.headers.get("X-Exam-Action") != "1": return self.send("للمعلم فقط", code=403)
             with LOCK:

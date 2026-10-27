@@ -52,7 +52,7 @@ def test_every_teacher_page_has_the_same_nav_with_the_right_active_tab(pkg):
             t = page(w, path, ck)
             nav = re.search(r"<header class='tnav noprint'>(.*?)</header>", t, re.S); assert nav, path
             hrefs = re.findall(r"<a href=(/\w+)( class=on aria-current=page)?>", nav.group(1))
-            assert [h for h, _ in hrefs] == ["/monitor", "/report", "/sheet", "/key", "/codes", "/health", "/teacher"], (path, hrefs)
+            assert [h for h, _ in hrefs] == ["/monitor", "/report", "/sheet", "/key", "/codes", "/settings", "/health", "/teacher"], (path, hrefs)
             assert [h for h, on in hrefs if on] == [active], (path, hrefs)                                  # تبويب واحد بس نشط وهو صفحتها
             assert "/logout" in t                                                                              # في كلمة سر: زر القفل
     finally:

@@ -24,7 +24,7 @@ P(f"عنوان الامتحان : {S.SET['title']}" + ("   (تلقائي؛ لع�
 P(f"المدة          : {S.SET['minutes']} دقيقة")
 lv = collections.Counter(q["level"] for q in S.QLIST)
 P("بنك الأسئلة    : %d سؤال  (%s)" % (len(S.QLIST), "، ".join(f"{S.LVL[k]} {lv[k]}" for k in ("hard", "medium", "easy") if lv[k])))
-P("بالامتحان      : %d سؤال  (%s)" % (sum(S.PICK.values()), "، ".join(f"{S.LVL[k]} {v}" for k, v in S.PICK.items() if v)))
+P("بالامتحان      : %d سؤال  (%s)" % (sum(S.PICK.values()), "، ".join(f"{S.glabel(k)} {v}" for k, v in S.PICK.items() if v)))
 lo, hi = S.total_range(S.PICK)
 P("العلامة الكاملة: " + (str(lo) if lo == hi else f"{lo} إلى {hi} (تختلف حسب الأسئلة المسحوبة)"))
 P("الطلاب         : %d" % sum(len(n) for g in S.ROSTER.values() for n in g.values()))
