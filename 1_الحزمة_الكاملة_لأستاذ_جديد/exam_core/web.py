@@ -105,8 +105,13 @@ def make_handler(ctx, app):
             hdr = {"Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"}
             if ext == ".svg": hdr["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
             with open(fp, "rb") as f: return self.send(f.read(), IMG_EXT[ext], 200, hdr)
+        SETUP_OK = ("/files", "/files.json", "/template/questions.xlsx", "/template/students.xlsx")        # صفحات المعلم اللي بتشتغل بوضع التجهيز (الأسئلة أو الطلاب لسا ناقصين)
+        def setup_allows(self, path):
+            """وضع التجهيز: صفحات الرفع، وصفحة الإعدادات لو المشكلة الوحيدة هي قواعد السحب (عشان يعدّلها)"""
+            return path in self.SETUP_OK or (set(ctx.SETUP) == {"settings"} and path in ("/settings", "/settings.json"))
         def get_teacher_page(self, path, q):
             if not self.teacher(): return self.not_local(path)
+            if ctx.SETUP and not self.setup_allows(path): return self.send("", code=302, extra={"Location": "/files"})
             with ctx.LOCK:
                 if path in ("/monitor", "/admin"):
                     return self.send(app.monitor_ui_page() or app.monitor_old_page(), "text/html; charset=utf-8")      # الجديدة، أو القديمة لو مجلد monitor_ui مش موجود
@@ -145,6 +150,7 @@ def make_handler(ctx, app):
             app.note_client(self)
             app.gap_check()
             if urllib.parse.urlparse(self.path).path == "/upload": return self.post_upload()
+            if ctx.SETUP and not (self.path == "/login" or (self.path == "/settings" and self.setup_allows("/settings"))): self.close_connection = True; return self.send(json.dumps({"ok": False, "error": "الامتحان لسا غير جاهز (وضع التجهيز)", "notready": True}, ensure_ascii=False), "application/json; charset=utf-8", 503)
             try: n = int(self.headers["Content-Length"])
             except Exception: return self.send("bad", code=400)
             if n < 0: return self.send("bad", code=400)

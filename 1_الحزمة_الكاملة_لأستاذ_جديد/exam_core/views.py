@@ -56,6 +56,7 @@ FILES_BODY = r"""<style>
 .fl .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
 .fl input[type=file]{font:inherit;font-size:13px;max-width:100%}
 .fl a.tpl{font-size:13px;color:#14566b}
+.fl .setup{background:#fdeceb;border:1px solid #e9b3ae;border-radius:10px;padding:10px 14px;font-size:13px;margin:0 0 12px;line-height:1.8}.fl .setup b{color:#b3261e}.fl .setup pre{white-space:pre-wrap;font:inherit;margin:2px 0 6px;color:#7a1f18}
 .fl .lock{background:#fff4d6;border:1px solid #ecd48a;border-radius:8px;padding:8px 12px;font-size:13px;margin:0 0 12px}
 .fl .err{color:#b3261e;font-size:13px;margin:8px 0;white-space:pre-wrap;line-height:1.7;background:#fdeceb;border-radius:8px;padding:8px 12px}
 .fl .okm{color:#1b7f46;font-size:13px;margin:8px 0;line-height:1.8;background:#eaf6ee;border-radius:8px;padding:8px 12px}
@@ -73,9 +74,11 @@ async function load(){
 function pills(o){return Object.entries(o).map(([k,v])=>'<span class="pill">'+esc(k)+': '+v+'</span>').join('')}
 function fileLine(f){return f?'<div>الملف الحالي: <b>'+esc(f.name)+'</b> ('+f.kb+' KB، '+esc(f.time)+')</div>':'<div>ما في ملف حالياً</div>'}
 function render(){
-  const q=S.questions,st=S.students,im=S.images,lock=S.started;
+  const q=S.questions,st=S.students,im=S.images,lock=S.started;const nm={questions:'ملف الأسئلة',students:'ملف الطلاب',settings:'الإعدادات / قواعد السحب'};
+  const su=Object.entries(S.setup||{});
   const cols=Object.entries(q.columns||{}).map(([c,vs])=>'<div>'+esc(c)+': '+vs.map(x=>'<span class="pill">'+esc(x[0])+' '+x[1]+'</span>').join('')+'</div>').join('');
   root.innerHTML='<h2>الملفات: الأسئلة والطلاب والصور</h2><p class="sub">ارفع ملفاتك من هون، وما بتحتاج تفتح مجلد النظام. كل ملف بينفحص مقابل <b>القالب الأصلي</b> قبل ما ينحفظ، ولو فيه خطأ ما بيتغير شي وبتشوف الأخطاء سطر سطر. أي تعديل بعدين بتعمله بملف Excel وبترفعه من جديد (بنحتفظ بنسخة من القديم).</p>'
+  +(su.length?'<div class="setup"><b>الامتحان لسا غير جاهز</b> (وضع التجهيز): الطلاب بيشوفوا «الامتحان غير جاهز» لحد ما ترفع الناقص، وأول ما يكتمل بيجهز لحاله بدون إعادة تشغيل.'+su.map(([k,v])=>'<div>• <b>'+nm[k]+'</b>: '+(v?'فيه خطأ:<pre>'+esc(v)+'</pre>'+(k==='settings'?'عدّل <a href="/settings">إعدادات الامتحان</a> أو ارفع أسئلة ثانية.':'صحّحه وارفعه من جديد.'):'لسا ما انرفع، ارفعه من الخانة تحت.')+'</div>').join('')+'</div>':'')
   +(lock?'<div class="lock">الامتحان بدأ: <b>الأسئلة والصور مقفلة</b> (الأوراق انسحبت منها). بتقدر بس تضيف طلاب جدد. لأسئلة جديدة ابدأ امتحاناً جديداً من شاشة المراقبة.</div>':'')
   +'<div class="cards">'
   +'<div class="card"><h3>1) ملف الأسئلة</h3><div class="cur"><b>'+q.count+'</b> سؤال'+(q.picked?' | الورقة: '+q.picked+' سؤال':'')+(q.images_used?' | '+q.images_used+' صورة مستعملة':'')+'<div>'+pills(q.levels)+'</div>'+cols+fileLine(q.file)+'</div>'
@@ -96,8 +99,9 @@ function render(){
 async function send(kind,name,file){
   let r;try{r=await fetch('/upload?kind='+kind+'&name='+encodeURIComponent(name),{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Exam-Action':'1'},body:file})}catch(e){return {ok:false,error:'انقطع الاتصال بالسيرفر'}}
   try{return await r.json()}catch(e){return {ok:false,error:r.status===403?'غير مسموح: افتح الصفحة من جهاز السيرفر وسجّل دخول المعلم':'ردّ غير متوقع من السيرفر ('+r.status+')'}}}
-function okq(r){return 'تم رفع الأسئلة: <b>'+r.count+'</b> سؤال'+(r.picked?'، والورقة '+r.picked+' سؤال':'')+(r.images_used?'، '+r.images_used+' صورة مستعملة':'')+'.<div>'+pills(r.levels)+'</div>'+Object.entries(r.columns||{}).map(([c,vs])=>'<div>'+esc(c)+': '+vs.map(x=>'<span class="pill">'+esc(x[0])+' '+x[1]+'</span>').join('')+'</div>').join('')+(r.warnings||[]).map(w=>'<div class="wm">'+esc(w)+'</div>').join('')}
-function oks(r){return 'تم رفع الطلاب: <b>'+r.count+'</b> طالب'+(r.added||r.removed?' (أضفت '+r.added+'، وشلت '+r.removed+')':'')+'.<div>'+r.sections.map(x=>'<span class="pill">'+esc(x[0])+' '+esc(x[1])+': '+x[2]+'</span>').join('')+'</div>'}
+function pend(r){return (r.pending||[]).length?'<div class="wm">لسا ناقص: <b>'+r.pending.map(esc).join('، ')+'</b> (الامتحان بيجهز أول ما يكتمل).</div>':'<div class="wm">✔ الامتحان جاهز.</div>'}
+function okq(r){return 'تم رفع الأسئلة: <b>'+r.count+'</b> سؤال'+(r.picked?'، والورقة '+r.picked+' سؤال':'')+(r.images_used?'، '+r.images_used+' صورة مستعملة':'')+'.<div>'+pills(r.levels)+'</div>'+Object.entries(r.columns||{}).map(([c,vs])=>'<div>'+esc(c)+': '+vs.map(x=>'<span class="pill">'+esc(x[0])+' '+x[1]+'</span>').join('')+'</div>').join('')+(r.warnings||[]).map(w=>'<div class="wm">'+esc(w)+'</div>').join('')+pend(r)}
+function oks(r){return 'تم رفع الطلاب: <b>'+r.count+'</b> طالب'+(r.added||r.removed?' (أضفت '+r.added+'، وشلت '+r.removed+')':'')+'.<div>'+r.sections.map(x=>'<span class="pill">'+esc(x[0])+' '+esc(x[1])+': '+x[2]+'</span>').join('')+'</div>'+pend(r)}
 async function up(kind,inp,box,multi){
   const el=document.getElementById(inp),fs=[...el.files];const m=document.getElementById(box);
   if(!fs.length){m.innerHTML='<div class="err">اختر ملفاً أولاً</div>';return}
@@ -664,6 +668,13 @@ def build_preview(ctx):
     return t.replace("</script>\n</body>", auto + "</script>\n</body>", 1)
 def settings_page(ctx):
     return teacher_page(ctx, SETTINGS_BODY, "settings", "إعدادات الامتحان")
+def not_ready_page(ctx):
+    """صفحة الطالب لما الامتحان لسا غير جاهز (وضع التجهيز: الأسئلة أو الطلاب ما انرفعوا بعد): بتتحدّث لحالها كل 8 ثواني، وأول ما يجهز المعلم الامتحان بتفتح صفحة الدخول"""
+    return ("<!doctype html><html lang=ar dir=rtl><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><meta http-equiv=refresh content=8><title>الامتحان غير جاهز</title>"
+            "<body style='font-family:Tahoma,Segoe UI,Arial,sans-serif;background:#eaf1f4;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center'>"
+            "<div style='background:#fff;border-radius:16px;padding:28px 24px;max-width:420px;margin:16px;text-align:center;box-shadow:0 8px 28px #0001'>"
+            "<div style='font-size:42px'>⏳</div><h2 style='color:#14566b;margin:8px 0'>الامتحان لسا غير جاهز</h2>"
+            "<p style='color:#33414f;line-height:1.9;margin:6px 0'>انتظر المعلم، بيجهّز الامتحان هلأ.<br>هالصفحة بتتحدّث لحالها، وأول ما يجهز بتفتح لك صفحة الدخول.</p></div>")
 def files_page(ctx):
     return teacher_page(ctx, FILES_BODY, "files", "الملفات")
 def build_page(ctx):

@@ -109,16 +109,17 @@ def test_check_files_bat_ok_in_weird_path(weird, runs):
 
 def test_start_bat_with_broken_files_shows_english_banner_and_error_file(weird, runs):
     rows = bank(); rows[0][5] = "ز"; weird.questions(rows)
-    r = runs("start.bat", weird.path, env={"EXAM_PORT": str(free_port())}); code = r.finish()
-    assert "PROBLEM WITH THE EXAM FILES" in r.text and "exam_error.txt" in r.text
+    r = runs("start.bat", weird.path, env={"EXAM_PORT": str(free_port())})
+    assert r.wait_for("SERVER IS RUNNING"), r.text                                          # وضع التجهيز: السيرفر شغّال وصفحة «الملفات» فيها الخطأ
+    assert "has an error" in r.text and "/files" in r.text and "Give students this link" not in r.text
     assert "سطر 2" in (weird.path / "exam_error.txt").read_text(encoding="utf-8-sig")
-    assert "Give students this link" not in r.text
 
 
 def test_start_bat_missing_data_gives_actionable_hint(weird, runs):
     for n in ("questions.xlsx", "students.xlsx", "settings.txt"): (weird.path / n).unlink()
-    r = runs("start.bat", weird.path, env={"EXAM_PORT": str(free_port())}); r.finish()
-    assert "Missing file: put exam_data.zip" in r.text
+    r = runs("start.bat", weird.path, env={"EXAM_PORT": str(free_port())})
+    assert r.wait_for("not uploaded yet"), r.text                                           # وضع التجهيز: بيقول للمعلم يرفع الملفات من صفحة «الملفات»
+    assert "SERVER IS RUNNING" in r.text and "/files" in r.text and "Next step" in r.text
 
 
 def test_start_bat_unpacks_zip_dropped_next_to_server(weird, runs):

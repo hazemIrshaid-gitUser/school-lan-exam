@@ -132,8 +132,8 @@ def test_zip_unpack_message_goes_to_log(pkg, live):
 
 def test_error_path_in_forced_mode(pkg, live):
     rows = bank(); rows[0][5] = "ز"; pkg.questions(rows)
-    l = live(); l.proc.wait(15)
-    assert "PROBLEM WITH THE EXAM FILES" in l.text and not ARABIC.search(l.text) and "exam_error.txt" in l.text
+    l = live(); assert l.wait_for("SERVER IS RUNNING") and l.wait_for("exam_info.txt")           # وضع التجهيز: السيرفر شغّال (مش واقف) والملف فيه الخطأ
+    assert "has an error" in l.text and "/files" in l.text and not ARABIC.search(l.text) and l.proc.poll() is None
     assert "سطر 2" in pkg.p("exam_error.txt").read_text(encoding="utf-8-sig") and "سطر 2" in pkg.p("exam_log.txt").read_text(encoding="utf-8-sig")
 
 
@@ -213,9 +213,11 @@ def test_hidden_stdout_nul_is_not_a_console_and_never_opens_notepad(pkg):
 @pytest.mark.skipif(os.name != "nt", reason="ويندوز فقط")
 def test_hidden_stdout_with_broken_files_does_not_open_notepad_either(pkg):
     rows = bank(); rows[0][5] = "ز"; pkg.questions(rows)
-    with pytest.raises(RuntimeError):
-        Server(pkg).start()
-    time.sleep(0.8)
-    pids = _notepads_for(pkg.path.name)
-    for pid in pids: subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
-    assert pids == []
+    s = Server(pkg).start()                                                                  # وضع التجهيز: السيرفر شغّال (مش واقف) والملف فيه الخطأ
+    try:
+        time.sleep(0.8)
+        pids = _notepads_for(pkg.path.name)
+        for pid in pids: subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
+        assert pids == [] and pkg.p("exam_error.txt").exists()
+    finally:
+        s.stop()

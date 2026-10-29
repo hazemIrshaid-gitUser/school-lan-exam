@@ -9,7 +9,14 @@ except Exception: pass
 here = os.path.dirname(os.path.abspath(__file__)); os.chdir(here); sys.path.insert(0, here)
 try: os.remove(os.path.join(here, "check_report.txt"))   # تقرير قديم («سليمة ✔») ما لازم يضل لو الفحص هالمرة فشل؛ بيرجع ينكتب لو نجح
 except OSError: pass
-import server as S          # لو في خطأ بالملفات: بيطبعه ويفتح exam_error.txt بالمفكرة ويوقف هون (نفس رسالة السيرفر)
+import server as S          # لو في خطأ بالإعدادات: بيطبعه ويفتح exam_error.txt بالمفكرة ويوقف هون (نفس رسالة السيرفر)
+if S.ctx.SETUP:             # السيرفر بيشتغل بوضع التجهيز لو الأسئلة أو الطلاب ناقصين/فيهم خطأ، فالفحص لازم يفشل ويقول ليش
+    _msg = "\n\n".join(S.ctx.SETUP.values()); _path = S.report_problem("في مشكلة بالملفات — صلّحها وشغّل من جديد:\n\n" + _msg + "\n")
+    print("\n" + "=" * 56 + "\n  PROBLEM WITH THE EXAM FILES  /  في مشكلة بالملفات\n" + "=" * 56)
+    if any(S.core_uploads.is_missing(v) for v in S.ctx.SETUP.values()): print("  Missing file: put exam_data.zip (or questions.xlsx + students.xlsx; settings.txt is optional) next to server.py, then run again.")
+    print("  Details in Arabic were saved to: " + _path + ("  (opened in Notepad)" if S.REAL_CONSOLE else ""))
+    print(_msg); print("=" * 56)
+    sys.exit(1)
 
 lines = []
 def P(s=""):

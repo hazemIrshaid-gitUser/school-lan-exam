@@ -2,6 +2,7 @@
 from collections import Counter
 import os
 import time
+from .domain import bank_fp, check_bank_change
 from .questions import load_questions
 from .settings import COL_SKIP, REVIEW_OUT, SPEC, SPEC_BY_KEY, _clean_setting, _col_value, decode_settings, edit_settings_text, parse_rule
 from .storage import init_codes, read_settings, save_state
@@ -99,6 +100,8 @@ def apply_settings(ctx, d):
         else: ctx.STATE.pop("auto_title", None)
         save_state(ctx)
     if ctx.SET["needCode"]: init_codes(ctx)
+    if set(ctx.SETUP) == {"settings"}:                   # وضع التجهيز كان بسبب قواعد السحب بس، وهلأ انصلحت: الامتحان صار جاهز (الصفحة والمعاينة انبنوا فوق)
+        ctx.SETUP.clear(); ctx.BANK_FP = bank_fp(ctx); check_bank_change(ctx); save_state(ctx)
     return {"ok": True, "picked": sum(ctx.PICK.values())}
 def new_auto_title(ctx):
     """امتحان جديد والعنوان تلقائي: عنوان جديد (حتى ما يتعارض مع الامتحان اللي خلص على نفس الأجهزة)، ونعيد بناء صفحة الطالب والمعاينة فيه"""

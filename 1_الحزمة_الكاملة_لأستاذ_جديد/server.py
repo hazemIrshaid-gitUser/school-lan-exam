@@ -14,7 +14,7 @@ from exam_core.constants import L, LVL, HEAD, MAX_BODY, GRACE, YES, NO, LVL_IN, 
 from exam_core.util import mtxt, E, num, load_json, atomic_write, DataError, _DIG, norm_pass, norm_code, grp
 from exam_core.files import read_table, _fmt_kind, _xl_date, _pct_text, _BUILTIN_DATE_FMT
 from exam_core.ctx import Ctx
-from exam_core import questions as core_q, domain as core_domain, storage as core_storage, reports as core_reports, views as core_views, web as core_web, rehearsal as core_rehearsal, auth as core_auth, admin as core_admin
+from exam_core import uploads as core_uploads, questions as core_q, domain as core_domain, storage as core_storage, reports as core_reports, views as core_views, web as core_web, rehearsal as core_rehearsal, auth as core_auth, admin as core_admin
 from exam_core.constants import PROTECTED
 from exam_core.views import PASS_PCT, BANDS, CSS, TABS, SHEET_CSS, SETTINGS_BODY, MONITOR, REHEARSAL_PAGE
 from exam_core.questions import IMG_EXT, _IMG_TOKEN
@@ -145,9 +145,7 @@ def report_problem(text):
     return path
 try:
     unpack_data_zip()
-    SET.update(read_settings()); QLIST[:] = load_questions(); ROSTER.update(load_roster()); check_images()
-    BANK.update({q["n"]: q for q in QLIST})
-    _page, _pick = build_page(); ctx.PAGE = _page; PICK.update(_pick)
+    SET.update(read_settings())
 except DataError as e:
     msg = str(e)
     hint = "  Missing file: put exam_data.zip (or questions.xlsx + students.xlsx; settings.txt is optional) next to server.py, then run again." if "غير موجود جنب" in msg else ""
@@ -162,7 +160,27 @@ except Exception as e:
     print("\nERROR READING THE EXAM FILES: " + repr(e) + "\nMake sure the questions/students files are not open in Excel and are saved as xlsx or csv.\nDetails: " + path)
     print("\nخطأ بقراءة الملفات:", repr(e), "\nتأكد إن ملفات الأسئلة والطلاب مش مفتوحة بـ Excel وإنها محفوظة بصيغة xlsx أو csv.")
     sys.exit(1)
-try: os.remove(os.path.join(BASE, "exam_error.txt"))   # الملفات سليمة: رسالة خطأ قديمة (من تشغيل سابق) ما بتعود صحيحة، فبنشيلها حتى ما تضلّل المعلم
+def _file_problem(e):
+    """سبب مشكلة ملف الأسئلة/الطلاب: "" لو الملف لسا ما انرفع (مش غلط)، وإلا نص الخطأ"""
+    if isinstance(e, DataError): return str(e)
+    return "خطأ بقراءة الملفات: " + repr(e) + "\nتأكد إن ملفات الأسئلة والطلاب مش مفتوحة بـ Excel وإنها محفوظة بصيغة xlsx أو csv."
+try: QLIST[:] = load_questions()
+except Exception as e: ctx.SETUP["questions"] = _file_problem(e); IMG_LIST[:] = []; QLIST[:] = []
+try: ROSTER.update(load_roster())
+except Exception as e: ctx.SETUP["students"] = _file_problem(e); XCODES.clear(); ROSTER.clear()
+if not ctx.SETUP:
+    try:
+        check_images(); BANK.update({q["n"]: q for q in QLIST})
+        _page, _pick = build_page(); ctx.PAGE = _page; PICK.update(_pick)
+    except Exception as e:                             # مثلاً قواعد السحب بدها أسئلة أكثر من الموجودة
+        ctx.SETUP["settings"] = _file_problem(e); BANK.clear(); PICK.clear()
+_real = {k: v for k, v in core_uploads.setup_view(ctx).items() if v}      # مشاكل فعلية (الملف موجود وفيه خطأ)، مش مجرد ملف ما انرفع
+if _real:
+    report_problem("في مشكلة بالملفات — صلّحها وارفع الملف من صفحة «الملفات» (أو شغّل من جديد):\n\n" + "\n\n".join(_real.values()) + "\n")
+    for _v in _real.values(): print(_v)                  # بالسجل (exam_log.txt) كمان
+if ctx.SETUP: ctx.PAGE = core_views.not_ready_page(ctx)          # وضع التجهيز: الطالب بيشوف «غير جاهز» لحد ما المعلم يرفع الأسئلة والطلاب من صفحة «الملفات»
+try:
+    if not _real: os.remove(os.path.join(BASE, "exam_error.txt"))   # الملفات سليمة: رسالة خطأ قديمة (من تشغيل سابق) ما بتعود صحيحة، فبنشيلها حتى ما تضلّل المعلم
 except OSError: pass
 CLAIMS.update(load_json(ctx.CLAIMS_FILE, {}))        # مفتاح الطالب -> الجهاز اللي بدأ منه
 PAPERS.update(load_json(ctx.PAPERS_FILE, {}))        # مفتاح الطالب -> {start, ids, orders, extra}
@@ -194,7 +212,7 @@ if os.path.exists(ctx.SUBS_FILE):
 bank_fp = functools.partial(core_domain.bank_fp, ctx)
 ctx.BANK_FP = bank_fp()                                    # بصمة البنك: بتتجدد لما المعلم يرفع أسئلة جديدة من صفحة «الملفات» (m.BANK_FP بيقراها من ctx)
 check_bank_change = functools.partial(core_domain.check_bank_change, ctx)
-if check_bank_change():
+if not ctx.SETUP and check_bank_change():
     try: atomic_write(ctx.STATE_FILE, json.dumps(STATE, ensure_ascii=False))
     except OSError: pass
 bank_changed = functools.partial(core_domain.bank_changed, ctx)
@@ -211,7 +229,7 @@ refresh_tpass = functools.partial(core_auth.refresh_tpass, ctx)
 login_page = functools.partial(core_views.login_page, ctx)
 
 build_preview = functools.partial(core_views.build_preview, ctx)
-ctx.PREVIEW = build_preview()
+ctx.PREVIEW = build_preview() if not ctx.SETUP else ""
 save_claims = functools.partial(core_storage.save_claims, ctx)
 save_papers = functools.partial(core_storage.save_papers, ctx)
 parse_key = functools.partial(core_domain.parse_key, ctx)
@@ -518,6 +536,7 @@ def health_data():
     except OSError: writable = False
     sfx = "" if PORT == 80 else ":" + str(PORT)
     warns = []
+    if ctx.SETUP: warns.append("السيرفر بوضع التجهيز: " + "، ".join({"questions": "الأسئلة", "students": "الطلاب", "settings": "الإعدادات/قواعد السحب"}[k] + (" (ما انرفع)" if not v else " (فيه خطأ)") for k, v in core_uploads.setup_view(ctx).items()) + ". افتح صفحة «الملفات» (/files) وارفع الناقص؛ الطلاب بيشوفوا «غير جاهز».")
     if main.startswith("127."): warns.append("السيرفر ما لقى عنوان شبكة (127.0.0.1): الجهاز مش متصل بواي فاي أو شبكة، فالطلاب ما رح يقدروا يفتحوا الرابط.")
     kinds = {a: ip_kind(a, main) for a in ips}
     real_alts = [a for a, k in kinds.items() if k in ("hotspot", "other")]
@@ -630,6 +649,31 @@ def show_console_banner(sfx):
     _real_print("  To stop: Ctrl+C or close this window\n")
 
 
+def show_setup_banner(sfx):
+    """وضع التجهيز (ملف الأسئلة أو الطلاب ناقص أو فيه خطأ): السيرفر شغّال والمعلم بيرفع الملفات من صفحة «الملفات»"""
+    _out = _real_print if CONSOLE_NO_ARABIC else print          # _real_print معرّف بس بالوضع اللي بيخبّي العربي عن النافذة
+    loc = f"http://localhost{sfx}"
+    names = {"questions": "ملف الأسئلة", "students": "ملف الطلاب", "settings": "الإعدادات / قواعد السحب"}
+    ar = ["السيرفر شغّال، بس الامتحان لسا غير جاهز (وضع التجهيز).", "", "الناقص أو اللي فيه مشكلة:"]
+    view = core_uploads.setup_view(ctx)
+    for k, v in view.items(): ar.append(f"    - {names[k]}: " + ("لسا ما انرفع" if not v else "فيه خطأ، التفاصيل بصفحة «الملفات»"))
+    ar += ["", "الخطوة الجاية: افتح من هذا الجهاز صفحة «الملفات» وارفع الأسئلة والطلاب (والصور إن وُجدت):", "", f"        {loc}/files" + ("   (بكلمة سر المعلم)" if SET["tpass"] else ""), "",
+           "لما ترفع الملفات الناقصة بيجهز الامتحان لحاله بدون إعادة تشغيل. والطلاب لحد ذلك بيشوفوا «الامتحان غير جاهز».",
+           "خلّي نافذة CMD السوداء مفتوحة.", "", f"فحص السيرفر: {loc}/health", f"الرابط اللي بتعطيه للطلاب (بعد ما يجهز الامتحان): http://{ip()}{sfx}"]
+    try:
+        with open(INFO_FILE, "w", encoding="utf-8-sig") as f: f.write("\n".join(ar) + "\n")
+        if REAL_CONSOLE and not any(view.values()): os.startfile(INFO_FILE)          # لو في خطأ فعلي بيفتح exam_error.txt (فيه التفاصيل) بدل هذا
+    except OSError: pass
+    _out("\n" + "=" * 56)
+    _out("  SERVER IS RUNNING, but the exam is NOT ready yet (setup mode).")
+    for k, v in view.items(): _out(f"  - {k}: " + ("not uploaded yet" if not v else "has an error (details on the Files page)"))
+    _out("\n  Next step: open this page ON THIS COMPUTER and upload the questions and students (and images):\n\n        " + loc + "/files" + ("   (teacher password)" if SET["tpass"] else "") + "\n")
+    _out("  When the missing files are uploaded the exam becomes ready by itself (no restart). Keep this window open.")
+    _out("  Students will see 'exam not ready' until then.")
+    if not CONSOLE_NO_ARABIC: print("  السيرفر شغّال والامتحان لسا غير جاهز: افتح /files من هذا الجهاز وارفع الأسئلة والطلاب.")
+    _out("=" * 56); _out("  The Arabic details were saved to exam_info.txt (opened in Notepad).\n")
+
+
 def port_in_use(p):
     """في برنامج بيسمع عالمنفذ؟ على ويندوز http.server بيفتح المنفذ بـ SO_REUSEADDR، وبهالخاصية سيرفران (نسختان من الحزمة) بيفتحوا نفس المنفذ بدون أي خطأ والطلبات بتتوزّع بينهم عشوائياً،
     فما بنعتمد على فشل bind: بنجرّب نتصل. وسيرفر وقف قبل شوي ما بيسمع حدا (TIME_WAIT ما بيرد على اتصال)، فإعادة التشغيل الفورية بتضل على نفس المنفذ"""
@@ -655,6 +699,11 @@ if __name__ == "__main__":
     KEEP_AWAKE[0] = keep_awake(True)            # منع النوم طول ما السيرفر شغّال
     QUICKEDIT[0] = disable_quickedit()          # وما تتجمّد النافذة السوداء بضغطة ماوس
     sfx = "" if PORT == 80 else ":" + str(PORT)
+    if ctx.SETUP:
+        show_setup_banner(sfx)
+        try: srv.serve_forever()
+        finally: flush_answers(); keep_awake(False)
+        sys.exit(0)
     if CONSOLE_NO_ARABIC:
         show_console_banner(sfx)
         try: srv.serve_forever()

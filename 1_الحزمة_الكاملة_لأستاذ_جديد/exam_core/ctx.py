@@ -18,6 +18,7 @@ class Ctx:
         self.STATE = {}                            # حالة الامتحان (إنهاء المعلم، الرسالة...)؛ server.py بيعبّيها من state.json
         self.ANS_DIRTY, self.LAST_TICK = [False], [None]
         self.BANK_FP = ""
+        self.SETUP = {}                            # وضع التجهيز: فاضي = الامتحان جاهز. غير هيك: ملف ناقص أو فيه خطأ ({"questions"|"students"|"settings": رسالة الخطأ، أو "" لو الملف لسا ما انرفع}) والطلاب بيشوفوا «غير جاهز»
         self.REH = {"on": False, "until": 0.0, "at": 0.0, "full": False, "gen": 0, "devs": {}, "keys": set(), "arr": {}}          # بروفة الضغط (rehearsal.py)
         self.TOKENS = set()                        # جلسات المعلم المسجّلة (بالذاكرة فقط: بتنتهي بإطفاء السيرفر)
         self.TFAIL = [0, 0]                        # محاولات كلمة سر خاطئة [العدد، قفل لحد وقت]

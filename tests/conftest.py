@@ -95,9 +95,13 @@ class Pkg:
 
     def expect_error(self, *needles):
         """يتأكد إن التحميل فشل وإن رسالة الخطأ فيها كل الكلمات المطلوبة. يرجّع نص الرسالة"""
-        with pytest.raises(LoadFailed) as e:
-            self.load()
-        msg = str(e.value)
+        try:
+            mod = self.load()
+        except LoadFailed as e:                                     # خطأ بالإعدادات: السيرفر بيوقف (ما بيشتغل بوضع التجهيز)
+            msg = str(e)
+        else:                                                       # خطأ/نقص بالأسئلة أو الطلاب: السيرفر بيشتغل بوضع التجهيز والرسالة بـ ctx.SETUP
+            assert mod.ctx.SETUP, "السيرفر اشتغل عادي: ما في ملف ناقص أو فيه خطأ"
+            msg = "\n".join(mod.ctx.SETUP.values())
         for n in needles:
             assert n in msg, f"الرسالة ما فيها «{n}»:\n{msg}"
         return msg

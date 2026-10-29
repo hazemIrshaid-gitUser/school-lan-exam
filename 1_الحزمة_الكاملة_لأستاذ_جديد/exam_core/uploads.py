@@ -115,10 +115,10 @@ def _save(ctx, stem, data):
 def _rebuild(ctx):
     page, pick = build_page(ctx); prev = build_preview(ctx)
     ctx.PAGE = page; ctx.PICK.clear(); ctx.PICK.update(pick); ctx.PREVIEW = prev
-def _snap(ctx): return (list(ctx.QLIST), dict(ctx.BANK), list(ctx.IMG_LIST), ctx.PAGE, dict(ctx.PICK), ctx.PREVIEW, dict(ctx.GLBL), ctx.BANK_FP, {k: {a: dict(b) if isinstance(b, dict) else list(b) for a, b in v.items()} for k, v in ctx.ROSTER.items()}, dict(ctx.XCODES))
+def _snap(ctx): return (list(ctx.QLIST), dict(ctx.BANK), list(ctx.IMG_LIST), ctx.PAGE, dict(ctx.PICK), ctx.PREVIEW, dict(ctx.GLBL), ctx.BANK_FP, {k: {a: dict(b) if isinstance(b, dict) else list(b) for a, b in v.items()} for k, v in ctx.ROSTER.items()}, dict(ctx.XCODES), dict(ctx.SETUP))
 def _restore(ctx, s):
     ctx.QLIST[:] = s[0]; ctx.BANK.clear(); ctx.BANK.update(s[1]); ctx.IMG_LIST[:] = s[2]; ctx.PAGE = s[3]; ctx.PICK.clear(); ctx.PICK.update(s[4]); ctx.PREVIEW = s[5]
-    ctx.GLBL.clear(); ctx.GLBL.update(s[6]); ctx.BANK_FP = s[7]; ctx.ROSTER.clear(); ctx.ROSTER.update(s[8]); ctx.XCODES.clear(); ctx.XCODES.update(s[9])
+    ctx.GLBL.clear(); ctx.GLBL.update(s[6]); ctx.BANK_FP = s[7]; ctx.ROSTER.clear(); ctx.ROSTER.update(s[8]); ctx.XCODES.clear(); ctx.XCODES.update(s[9]); ctx.SETUP.clear(); ctx.SETUP.update(s[10])
 def _img_files(ctx):
     try: return sorted(f for f in os.listdir(ctx.IMG_DIR) if os.path.splitext(f)[1].lower() in IMG_EXT and os.path.isfile(os.path.join(ctx.IMG_DIR, f)))
     except OSError: return []
@@ -129,9 +129,25 @@ def _levels(ctx):
     lv = {}
     for q in ctx.QLIST: k = LVL.get(q["level"], "بدون مستوى"); lv[k] = lv.get(k, 0) + 1
     return lv
+def _go_live(ctx, was_setup):
+    """بعد رفع ناجح: لو الامتحان صار جاهز (ما بقي شي ناقص) بنحدّث بصمة البنك والحالة، وبننبّه المعلم بالنافذة"""
+    if ctx.SETUP: return
+    ctx.BANK_FP = bank_fp(ctx); check_bank_change(ctx); save_state(ctx)
+    if was_setup:
+        try: os.remove(os.path.join(ctx.BASE, "exam_error.txt"))        # رسالة المشكلة القديمة ما عادت صحيحة
+        except OSError: pass
+        ctx.print("الامتحان صار جاهز: الأسئلة والطلاب انرفعوا من صفحة «الملفات».")
+def is_missing(msg): return "غير موجود جنب" in msg
+def setup_view(ctx):
+    """مشاكل وضع التجهيز للعرض: "" لو الملف لسا ما انرفع (مش خطأ)، وإلا نص الخطأ"""
+    return {k: ("" if is_missing(v) else v) for k, v in ctx.SETUP.items()}
+def pending(ctx):
+    """الملفات اللي لسا ناقصة أو فيها خطأ (للعرض بعد الرفع)"""
+    names = {"questions": "الأسئلة", "students": "الطلاب", "settings": "الإعدادات"}
+    return [names[k] for k in ctx.SETUP]
 def upload_questions(ctx, data):
     if settings_started(ctx): raise DataError(LOCK_MSG)
-    path = _stage(ctx, "questions", data); snap = _snap(ctx)
+    path = _stage(ctx, "questions", data); snap = _snap(ctx); was_setup = bool(ctx.SETUP)
     try:
         check_questions_rows(_read(path, ("السؤال", "question")))
         ctx.IMG_LIST[:] = []
@@ -140,19 +156,21 @@ def upload_questions(ctx, data):
             lines = str(e).split("\n")
             raise DataError("\n".join(lines[:25]) + (f"\n… و{len(lines) - 25} ملاحظة أخرى" if len(lines) > 25 else "") + "\nصحّح الملف وارفعه من جديد. ما تغيّر شي.")
         ctx.QLIST[:] = new; ctx.BANK.clear(); ctx.BANK.update({q["n"]: q for q in new})
-        try: _rebuild(ctx)
-        except DataError as e: raise DataError(f"الأسئلة سليمة بس ما بتناسب إعدادات السحب الحالية: {e}\nعدّل الإعدادات (تبويب «إعدادات الامتحان») أو الأسئلة وارفع من جديد. ما تغيّر شي.")
+        if not [k for k in ctx.SETUP if k not in ("questions", "settings")]:        # وضع التجهيز وملف الطلاب لسا ناقص: ما منقدر نبني صفحة الطالب بعد
+          try: _rebuild(ctx)
+          except DataError as e: raise DataError(f"الأسئلة سليمة بس ما بتناسب إعدادات السحب الحالية: {e}\nعدّل الإعدادات (تبويب «إعدادات الامتحان») أو الأسئلة وارفع من جديد. ما تغيّر شي.")
         _save(ctx, "questions", data)
-        ctx.BANK_FP = bank_fp(ctx); check_bank_change(ctx); save_state(ctx)
+        ctx.SETUP.pop("questions", None); ctx.SETUP.pop("settings", None)
+        _go_live(ctx, was_setup)
     except BaseException:
         _restore(ctx, snap); raise
     finally: _unstage(path)
     names, cols, _ = settings_columns(ctx)
     big = [f"{n} ({os.path.getsize(os.path.join(ctx.IMG_DIR, n)) // 1024}KB)" for n in ctx.IMG_LIST if os.path.getsize(os.path.join(ctx.IMG_DIR, n)) > 500 * 1024]
-    return {"count": len(ctx.QLIST), "levels": _levels(ctx), "columns": {c: cols[c] for c in _shown(names)}, "images_used": len(ctx.IMG_LIST),
+    return {"pending": pending(ctx), "count": len(ctx.QLIST), "levels": _levels(ctx), "columns": {c: cols[c] for c in _shown(names)}, "images_used": len(ctx.IMG_LIST),
             "picked": sum(ctx.PICK.values()), "warnings": ([f"صور كبيرة (يفضّل أقل من 500KB): {'، '.join(big)}"] if big else [])}
 def upload_students(ctx, data):
-    path = _stage(ctx, "students", data); snap = _snap(ctx); old = {(g, s, n) for g, ss in ctx.ROSTER.items() for s, ns in ss.items() for n in ns}
+    path = _stage(ctx, "students", data); snap = _snap(ctx); was_setup = bool(ctx.SETUP); old = {(g, s, n) for g, ss in ctx.ROSTER.items() for s, ns in ss.items() for n in ns}
     try:
         check_students_rows(_read(path, ("الصف", "الاسم", "grade", "name")))
         ctx.XCODES.clear()
@@ -169,13 +187,15 @@ def upload_students(ctx, data):
             gone = sorted(used - new)
             if gone: raise DataError("الامتحان بدأ، وهدول الطلاب عندهم ورقة أو تسليم وما لاقيتهم بالملف الجديد: " + "، ".join(n for _, _, n in gone[:10]) + (" …" if len(gone) > 10 else "") + "\nبعد بدء الامتحان بتقدر بس تضيف طلاب، مش تحذف أو تغيّر أسماء.")
         ctx.ROSTER.clear(); ctx.ROSTER.update(ros)
-        _rebuild(ctx)
+        if not [k for k in ctx.SETUP if k not in ("students", "settings")]: _rebuild(ctx)        # وضع التجهيز وملف الأسئلة لسا ناقص: ما منقدر نبني صفحة الطالب بعد
         _save(ctx, "students", data)
+        ctx.SETUP.pop("students", None); ctx.SETUP.pop("settings", None)
+        _go_live(ctx, was_setup)
     except BaseException:
         _restore(ctx, snap); raise
     finally: _unstage(path)
     if ctx.SET["needCode"]: init_codes(ctx)
-    return {"count": len(new), "sections": [[g, s, len(ns)] for g, ss in ros.items() for s, ns in ss.items()], "added": len(new - old), "removed": len(old - new)}
+    return {"pending": pending(ctx), "count": len(new), "sections": [[g, s, len(ns)] for g, ss in ros.items() for s, ns in ss.items()], "added": len(new - old), "removed": len(old - new)}
 def upload_image(ctx, name, data):
     if settings_started(ctx): raise DataError(LOCK_MSG)
     base = check_image(name, data); os.makedirs(ctx.IMG_DIR, exist_ok=True); path = os.path.join(ctx.IMG_DIR, base); replaced = os.path.exists(path)
@@ -221,7 +241,7 @@ def _fileinfo(ctx, stem):
 def files_state(ctx):
     """حالة صفحة «الملفات»: الأسئلة والطلاب والصور الحالية والأقفال"""
     names, cols, _ = settings_columns(ctx); imgs = _img_files(ctx)
-    return {"started": settings_started(ctx), "limits": {k: v // MB for k, v in LIMITS.items()},
+    return {"started": settings_started(ctx), "setup": setup_view(ctx), "limits": {k: v // MB for k, v in LIMITS.items()},
             "questions": {"count": len(ctx.QLIST), "levels": _levels(ctx), "columns": {c: cols[c] for c in _shown(names)}, "images_used": len(ctx.IMG_LIST), "picked": sum(ctx.PICK.values()), "file": _fileinfo(ctx, "questions")},
             "students": {"count": sum(len(ns) for ss in ctx.ROSTER.values() for ns in ss.values()), "sections": [[g, s, len(ns)] for g, ss in ctx.ROSTER.items() for s, ns in ss.items()], "file": _fileinfo(ctx, "students")},
             "images": {"count": len(imgs), "unused": [f for f in imgs if f not in ctx.IMG_LIST]}}
