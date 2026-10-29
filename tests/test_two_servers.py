@@ -4,13 +4,13 @@
 import json, os, re, shutil, socket, time, urllib.request
 
 import pytest
-from conftest import CODE_FILES, PKG_SRC, Pkg
+from conftest import CODE_FILES, PKG_SRC, Pkg, copy_any
 from test_http import Server, free_port
 
 
 def make_copy(tmp_path, name):
     d = tmp_path / name; d.mkdir()
-    for f in CODE_FILES: shutil.copy(PKG_SRC / f, d / f)
+    for f in CODE_FILES: copy_any(PKG_SRC / f, d / f)
     pk = Pkg(d); pk.questions(); pk.students(); pk.settings(); return pk
 
 

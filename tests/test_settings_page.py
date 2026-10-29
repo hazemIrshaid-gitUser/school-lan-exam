@@ -79,7 +79,7 @@ def test_page_and_save_are_not_reachable_from_the_network(pkg):
 
 # ============================ تغطية كل الإعدادات ============================
 def test_every_setting_of_the_file_is_on_the_page_and_nothing_else(pkg):
-    src = (pkg.path / "server.py").read_text(encoding="utf-8")
+    src = (pkg.path / "exam_core" / "settings.py").read_text(encoding="utf-8")        # تحليل الإعدادات انتقل لوحدة settings
     block = src[src.index("    keys = {"): src.index("    REVIEW = {")]
     file_keys = set(re.findall(r'"([^"]+)": "[A-Za-z]+"', block))
     m = pkg.load()

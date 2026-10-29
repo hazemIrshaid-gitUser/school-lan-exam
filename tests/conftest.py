@@ -7,7 +7,7 @@ import pytest
 
 HERE = pathlib.Path(__file__).resolve().parent
 PKG_SRC = pathlib.Path(os.environ["EXAM_PKG"]) if os.environ.get("EXAM_PKG") else next(HERE.parent.glob("1_*"))
-CODE_FILES = ("server.py", "template.html", "check_files.py")
+CODE_FILES = ("server.py", "template.html", "check_files.py", "exam_core")        # exam_core = مجلد وحدات السيرفر (server.py بيستوردها من جنبه)
 _counter = itertools.count()
 
 Q_HEAD = ["السؤال", "أ", "ب", "ج", "د", "الجواب", "المستوى", "المرجع", "الحل", "العلامة", "ثابت"]
@@ -39,6 +39,12 @@ DEFAULT_SETTINGS = {
     "عدد_الأسئلة_الصعبة": "2", "عدد_الأسئلة_المتوسطة": "3", "عدد_الأسئلة_السهلة": "3", "عدد_الأسئلة_الكلي": "8",
     "خلط_الأسئلة": "نعم", "خلط_الخيارات": "نعم", "كلمة_سر_المعلم": "secret",
 }
+
+
+def copy_any(src, dst):
+    """ينسخ ملفاً أو مجلداً (exam_core) بدون __pycache__"""
+    if os.path.isdir(src): shutil.copytree(src, dst, dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__"))
+    else: shutil.copy(src, dst)
 
 
 class LoadFailed(Exception):
@@ -101,7 +107,7 @@ class Pkg:
 def pkg(tmp_path):
     """نسخة نظيفة من الحزمة + ملفات سليمة افتراضية (الاختبار بيخرّب اللي بدو)"""
     for f in CODE_FILES:
-        shutil.copy(PKG_SRC / f, tmp_path / f)
+        copy_any(PKG_SRC / f, tmp_path / f)
     pk = Pkg(tmp_path)
     pk.questions(); pk.students(); pk.settings()
     return pk

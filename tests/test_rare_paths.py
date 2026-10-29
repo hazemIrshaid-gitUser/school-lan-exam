@@ -55,11 +55,11 @@ def test_submit_that_cannot_be_saved_returns_500_and_loses_nothing(inproc, monke
     k = start_paper(m, key_of(m), "d1"); ids = m.PAPERS[k]["ids"]
     body = {"key": k, "dev": "d1", "ids": ids, "answers": ",".join(str(m.BANK[n]["a"]) for n in ids), "auto": "يدوي", "leave": "لم يخرج"}
     good = m.SUBS_FILE; bad = tmp_path / "مش ملف"; bad.mkdir()
-    monkeypatch.setattr(m, "SUBS_FILE", str(bad))                                                  # فتح «مجلد» للكتابة بيفشل (زي قرص ممتلئ أو ملف ممسوك)
+    monkeypatch.setattr(m.ctx, "SUBS_FILE", str(bad))                                                  # فتح «مجلد» للكتابة بيفشل (زي قرص ممتلئ أو ملف ممسوك)
     st, txt = post(port, "/submit", body)
     assert st == 500 and txt == b"save failed" and k not in m.SUBS and k in m.PAPERS and m.CLAIMS[k] == "d1"   # الطالب لسا بامتحانه
     st, txt = post(port, "/resume", {"key": k, "dev": "d1"}); assert st == 200 and json.loads(txt)["status"] == "ok"
-    monkeypatch.setattr(m, "SUBS_FILE", good)
+    monkeypatch.setattr(m.ctx, "SUBS_FILE", good)
     st, txt = post(port, "/submit", body); r = json.loads(txt)
     assert st == 200 and r["score"] == r["total"] and k in m.SUBS
     assert len(open(good, encoding="utf-8").read().splitlines()) == 1

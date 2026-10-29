@@ -4,7 +4,7 @@ import os, pathlib, re
 
 import openpyxl
 import pytest
-from conftest import Pkg, CODE_FILES, PKG_SRC
+from conftest import Pkg, CODE_FILES, PKG_SRC, copy_any
 import office_gen
 
 pytestmark = pytest.mark.skipif(os.name != "nt" or not os.path.exists(office_gen.SOFFICE) or not os.path.exists(office_gen.EXCEL), reason="Excel/LibreOffice غير مثبّتين")
@@ -33,7 +33,7 @@ def need(office, name):
 def shell(tmp_path):
     """مجلد حزمة سليم لنقدر نستعمل read_table ونحمّل السيرفر بملف الأسئلة اللي بدنا إياه"""
     import shutil
-    for f in CODE_FILES: shutil.copy(PKG_SRC / f, tmp_path / f)
+    for f in CODE_FILES: copy_any(PKG_SRC / f, tmp_path / f)
     pk = Pkg(tmp_path); pk.questions(); pk.students(); pk.settings()
     return pk
 

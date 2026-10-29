@@ -3,7 +3,7 @@ EXAM_NO_ARABIC_CONSOLE=1 بيفرض الوضع على أنبوب (بدون نا�
 import json, os, re, socket, subprocess, sys, time
 
 import pytest
-from conftest import bank, roster
+from conftest import bank, roster, copy_any
 from test_http import Server, free_port, PKG_PYTHON
 from test_windows_env import Run
 
@@ -150,7 +150,7 @@ def test_start_bat_in_forced_mode_has_no_boxes(pkg, tmp_path):
     import shutil
     from conftest import CODE_FILES, PKG_SRC
     d = tmp_path / "امتحان (تجربة) & 1"; d.mkdir()
-    for f in (*CODE_FILES, "start.bat"): shutil.copy(PKG_SRC / f, d / f)
+    for f in (*CODE_FILES, "start.bat"): copy_any(PKG_SRC / f, d / f)
     for n in ("questions.xlsx", "students.xlsx", "settings.txt"): shutil.copy(pkg.p(n), d / n)
     r = Run("start.bat", d, env={"EXAM_PORT": str(free_port()), "EXAM_NO_ARABIC_CONSOLE": "1"})
     try:
@@ -166,7 +166,7 @@ def test_real_console_window_opens_info_file_in_notepad(pkg, tmp_path):
     import shutil
     from conftest import CODE_FILES, PKG_SRC
     d = tmp_path / "real console تجربة"; d.mkdir()
-    for f in (*CODE_FILES, "start.bat"): shutil.copy(PKG_SRC / f, d / f)
+    for f in (*CODE_FILES, "start.bat"): copy_any(PKG_SRC / f, d / f)
     for n in ("questions.xlsx", "students.xlsx", "settings.txt"): shutil.copy(pkg.p(n), d / n)
     env = dict(os.environ, EXAM_PORT=str(free_port())); env.pop("EXAM_NO_ARABIC_CONSOLE", None)
     cmdline = f'"{os.path.join(os.environ.get("SystemRoot", "C:/Windows"), "System32", "cmd.exe")}" /d /s /c ""{d / "start.bat"}""'

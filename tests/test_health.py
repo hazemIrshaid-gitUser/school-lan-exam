@@ -2,7 +2,7 @@
 import json, os, re, subprocess, sys, threading, time
 
 import pytest
-from conftest import bank
+from conftest import bank, copy_any
 from test_http import Server, TEACHER, free_port, lan_ip
 from test_console_mode import Live, ARABIC
 
@@ -196,7 +196,7 @@ def test_real_console_window_disables_quickedit_and_keeps_awake(pkg, tmp_path):
     import shutil
     from conftest import CODE_FILES, PKG_SRC
     d = tmp_path / "quickedit تجربة"; d.mkdir()
-    for f in (*CODE_FILES, "start.bat"): shutil.copy(PKG_SRC / f, d / f)
+    for f in (*CODE_FILES, "start.bat"): copy_any(PKG_SRC / f, d / f)
     for n in ("questions.xlsx", "students.xlsx", "settings.txt"): shutil.copy(pkg.p(n), d / n)
     port = free_port(); env = dict(os.environ, EXAM_PORT=str(port)); env.pop("EXAM_NO_ARABIC_CONSOLE", None)
     cmdline = f'"{os.path.join(os.environ.get("SystemRoot", "C:/Windows"), "System32", "cmd.exe")}" /d /s /c ""{d / "start.bat"}""'

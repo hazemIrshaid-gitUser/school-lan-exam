@@ -3,7 +3,7 @@ import codecs, os, shutil, socket, subprocess, sys, threading, time
 import urllib.request
 
 import pytest
-from conftest import CODE_FILES, PKG_SRC, Pkg, bank, roster
+from conftest import CODE_FILES, PKG_SRC, Pkg, bank, roster, copy_any
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="ويندوز فقط")
 SYS32 = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32")
@@ -19,7 +19,7 @@ def weird(tmp_path):
     d = tmp_path / "امتحان (فيزياء) & كيمياء 2026"
     d.mkdir()
     for f in (*CODE_FILES, "start.bat", "check_files.bat"):
-        shutil.copy(PKG_SRC / f, d / f)
+        copy_any(PKG_SRC / f, d / f)
     pk = Pkg(d); pk.questions(); pk.students(); pk.settings()
     return pk
 

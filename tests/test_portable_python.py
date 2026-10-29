@@ -4,7 +4,7 @@
 import os, re, shutil, subprocess
 
 import pytest
-from conftest import CODE_FILES, PKG_SRC, Pkg
+from conftest import CODE_FILES, PKG_SRC, Pkg, copy_any
 from test_windows_env import Run, SYS32, free_port
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="ويندوز فقط")
@@ -35,7 +35,7 @@ def test_report_problem_bat_is_the_same_in_the_update_folder():
 def portable(tmp_path):
     """نسخة الحزمة الكاملة بمسار عربي فيه مسافات وأقواس و& (مثل الأستاذ): مع مجلد python، وبدون أي ملف زيادة"""
     d = tmp_path / "امتحان (فيزياء) & كيمياء 2026"; d.mkdir()
-    for f in (*CODE_FILES, *BATS, "report_problem.py"): shutil.copy(PKG_SRC / f, d / f)
+    for f in (*CODE_FILES, *BATS, "report_problem.py"): copy_any(PKG_SRC / f, d / f)
     shutil.copytree(BUNDLED, d / "python")
     pk = Pkg(d); pk.questions(); pk.students(); pk.settings(); return pk
 
