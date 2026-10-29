@@ -25,6 +25,16 @@ def atomic_write(path, text, tries=10):
         except PermissionError:
             if i == tries - 1: raise
             time.sleep(0.05)
+def atomic_write_bytes(path, data, tries=10):
+    """نفس atomic_write بس لبيانات ثنائية (ملفات xlsx والصور المرفوعة)"""
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(data); f.flush(); os.fsync(f.fileno())
+    for i in range(tries):
+        try: os.replace(tmp, path); return
+        except PermissionError:
+            if i == tries - 1: raise
+            time.sleep(0.05)
 class DataError(Exception): pass
 def norm_code(c): return str(c).translate(str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")).strip()
 _DIG = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")

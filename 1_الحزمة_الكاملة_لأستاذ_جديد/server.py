@@ -99,7 +99,7 @@ PAPERS, CLAIMS, ANS, LIVE, SUBS, CODES, FAILS, STATE, ANS_DIRTY, LAST_TICK = ctx
 LOCK = ctx.LOCK
 REH, TOKENS, TFAIL, SET_MTIME = ctx.REH, ctx.TOKENS, ctx.TFAIL, ctx.SET_MTIME
 GLBL = ctx.GLBL
-_CTX_NAMES = ("OUT", "SUBS_FILE", "CLAIMS_FILE", "PAPERS_FILE", "STATE_FILE", "ANS_FILE", "CODES_FILE", "ALIVE_FILE", "MAX_COMP", "GAP_S", "REOPEN_MIN")         # مسارات الملفات والثوابت: مصدرها ctx (m.SUBS_FILE بالاختبارات والأدوات)
+_CTX_NAMES = ("OUT", "SUBS_FILE", "CLAIMS_FILE", "PAPERS_FILE", "STATE_FILE", "ANS_FILE", "CODES_FILE", "ALIVE_FILE", "BANK_FP", "MAX_COMP", "GAP_S", "REOPEN_MIN")         # مسارات الملفات والثوابت: مصدرها ctx (m.SUBS_FILE بالاختبارات والأدوات)
 def __getattr__(name):                              # PAGE و PREVIEW نصوص بتتبدّل: بتنقرأ من ctx (مثلاً m.PAGE بالاختبارات)
     if name in ("PAGE", "PREVIEW") or name in _CTX_NAMES: return getattr(ctx, name)
     raise AttributeError(name)
@@ -192,7 +192,7 @@ if os.path.exists(ctx.SUBS_FILE):
         except Exception: pass
 
 bank_fp = functools.partial(core_domain.bank_fp, ctx)
-BANK_FP = ctx.BANK_FP = bank_fp()
+ctx.BANK_FP = bank_fp()                                    # بصمة البنك: بتتجدد لما المعلم يرفع أسئلة جديدة من صفحة «الملفات» (m.BANK_FP بيقراها من ctx)
 check_bank_change = functools.partial(core_domain.check_bank_change, ctx)
 if check_bank_change():
     try: atomic_write(ctx.STATE_FILE, json.dumps(STATE, ensure_ascii=False))
@@ -332,7 +332,7 @@ def archive_all():
     except Exception as e: print("تنبيه: تعذّر تجهيز مجلد النتائج:", repr(e))            # الأرشفة نفسها (نقل الملفات) ما لازم تفشل بسبب هاي الإضافة
     CLAIMS.clear(); LIVE.clear(); SUBS.clear(); PAPERS.clear(); ANS.clear(); ANS_DIRTY[0] = False
     reh_reset()                                  # أي بروفة كانت شغّالة بتنتهي مع الامتحان القديم
-    STATE["bank_fp"] = BANK_FP; STATE.pop("bank_changed", None)
+    STATE["bank_fp"] = ctx.BANK_FP; STATE.pop("bank_changed", None)
     if SET.get("auto_title"): new_auto_title()
     else: save_state()
     write_results_csv()

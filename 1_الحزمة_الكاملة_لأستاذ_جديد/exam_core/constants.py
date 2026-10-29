@@ -10,4 +10,4 @@ NO = {"لا", "no", "false", "0", "n", "لا."}
 LVL_IN = {"صعب": "hard", "صعبة": "hard", "hard": "hard", "وسط": "medium", "متوسط": "medium", "متوسطة": "medium", "medium": "medium",
           "سهل": "easy", "سهلة": "easy", "easy": "easy", "": ""}
 LET_IN = {"أ": 0, "ا": 0, "إ": 0, "a": 0, "1": 0, "ب": 1, "b": 1, "2": 1, "ج": 2, "c": 2, "3": 2, "د": 3, "d": 3, "4": 3}
-PROTECTED = ("/key", "/teacher", "/sheet", "/codes", "/settings", "/settings.json")      # صفحات المعلم اللي بتحتاج كلمة السر (فيها الإجابات الصحيحة أو رموز الطلاب)
+PROTECTED = ("/key", "/teacher", "/sheet", "/codes", "/settings", "/settings.json", "/files", "/files.json")      # صفحات المعلم اللي بتحتاج كلمة السر (فيها الإجابات الصحيحة أو رموز الطلاب)

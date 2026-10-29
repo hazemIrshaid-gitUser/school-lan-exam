@@ -76,8 +76,9 @@ def _lost_text(t):
     """«؟؟؟»: ملف CSV انحفظ بترميز ما بيدعم العربي (CSV عادي بإكسل على ويندوز غير عربي) فاستبدل الحروف بعلامات استفهام"""
     s = "".join(str(t).split())
     return len(s) >= 3 and s.count("?") >= 3 and s.count("?") / len(s) >= 0.6
-def load_questions(ctx, auto_math=True):
-    rows = files.read_table(files.find_file(ctx.BASE, "questions"), ("السؤال", "question"))
+def load_questions(ctx, auto_math=True, path=None):
+    """path: ملف أسئلة بمكان ثاني (فحص ملف مرفوع قبل ما ينحفظ)؛ بدونه بنقرأ questions.xlsx من مجلد الامتحان"""
+    rows = files.read_table(path or files.find_file(ctx.BASE, "questions"), ("السؤال", "question"))
     out, errs = [], []
     hdr = [norm_hdr(c) for c in rows[0]]
     for i, r in enumerate(rows[1:], 2):
@@ -108,8 +109,9 @@ def load_questions(ctx, auto_math=True):
     if errs: raise DataError("\n".join(errs))
     if not out: raise DataError("ملف الأسئلة فاضي")
     return out
-def load_roster(ctx):
-    rows = files.read_table(files.find_file(ctx.BASE, "students"), ("الصف", "الاسم", "grade", "name")); ros, seen, errs = {}, set(), []
+def load_roster(ctx, path=None):
+    """path: ملف طلاب بمكان ثاني (فحص ملف مرفوع قبل ما ينحفظ)؛ بدونه بنقرأ students.xlsx من مجلد الامتحان"""
+    rows = files.read_table(path or files.find_file(ctx.BASE, "students"), ("الصف", "الاسم", "grade", "name")); ros, seen, errs = {}, set(), []
     for i, r in enumerate(rows[1:], 2):
         r = r + [""] * (4 - len(r))
         if not any(r): continue

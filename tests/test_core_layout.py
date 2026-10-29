@@ -316,7 +316,7 @@ def web(pkg):
 
 GET_OPEN = {"/", "/index.html", "/ok", "/rehearsal", "/rehearsal.json", "/health", "/health.json", "/taken", "/link"}
 GET_AUTH = {"/login", "/authcheck", "/logout"}
-GET_TEACHER = {"/monitor", "/monitor-old", "/monitor.json", "/admin", "/report", "/report.xlsx", "/sheet", "/key", "/codes", "/teacher", "/settings", "/settings.json"}
+GET_TEACHER = {"/monitor", "/monitor-old", "/monitor.json", "/admin", "/report", "/report.xlsx", "/sheet", "/key", "/codes", "/teacher", "/settings", "/settings.json", "/files", "/files.json", "/template/questions.xlsx", "/template/students.xlsx"}
 POST_ROUTES = {"/login", "/settings", "/monitor", "/rehearsal/join", "/rehearsal/report", "/start", "/resume", "/review", "/ping", "/submit"}
 
 
@@ -396,7 +396,7 @@ def test_rehearsal_auth_and_admin_in_server_are_partials_of_their_modules(srv):
         for n in names: f = getattr(srv, n); assert f.func is getattr(m, n) and f.args == (srv.ctx,), (mod, n)
     for n in ("REH", "TOKENS", "TFAIL", "SET_MTIME"): assert getattr(srv, n) is getattr(srv.ctx, n), n
     from exam_core.constants import PROTECTED
-    assert srv.PROTECTED is PROTECTED and "/settings" in PROTECTED and "/key" in PROTECTED
+    assert srv.PROTECTED is PROTECTED and "/settings" in PROTECTED and "/key" in PROTECTED and "/files" in PROTECTED and "/files.json" in PROTECTED
 
 
 def test_rehearsal_from_a_hand_built_ctx(srv):

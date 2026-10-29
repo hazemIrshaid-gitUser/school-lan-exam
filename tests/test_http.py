@@ -324,7 +324,7 @@ def test_monitor_json_and_reports(web):
 
 
 # ======================= الأمان: صلاحيات =======================
-TEACHER_GET = ["/monitor", "/monitor.json", "/admin", "/report", "/report.xlsx", "/sheet", "/key", "/codes", "/teacher", "/settings", "/settings.json", "/link"]
+TEACHER_GET = ["/monitor", "/monitor.json", "/admin", "/report", "/report.xlsx", "/sheet", "/key", "/codes", "/teacher", "/settings", "/settings.json", "/files", "/files.json", "/template/questions.xlsx", "/template/students.xlsx", "/link"]
 
 
 def test_teacher_pages_open_from_localhost_without_password_when_unset(pkg, web_for):

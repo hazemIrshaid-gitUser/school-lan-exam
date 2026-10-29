@@ -45,8 +45,72 @@ CSS = ("<meta charset=utf-8><meta name=viewport content='width=device-width,init
        "@media print{.noprint{display:none}.tnav{display:none}body{background:#fff;max-width:none;margin:0;padding:0}.card,.kpi,table{border-radius:0}.tw{overflow:visible}.tw table{min-width:0}}"
        "</style>")
 TABS = (("monitor", "/monitor", "المراقبة الحية"), ("report", "/report", "التقارير والتحليل"), ("sheet", "/sheet", "ورقات الطلاب"), ("key", "/key", "مفتاح الإجابات"),
-        ("codes", "/codes", "رموز الدخول"), ("settings", "/settings", "إعدادات الامتحان"), ("health", "/health", "فحص السيرفر"), ("teacher", "/teacher", "معاينة الامتحان"))
+        ("codes", "/codes", "رموز الدخول"), ("files", "/files", "الملفات"), ("settings", "/settings", "إعدادات الامتحان"), ("health", "/health", "فحص السيرفر"), ("teacher", "/teacher", "معاينة الامتحان"))
 SHEET_CSS = "<style>" + FRAC_CSS + ".q{border:1px solid #bbb;border-radius:6px;padding:8px 10px;margin:8px 0;page-break-inside:avoid}.q.bad{border-color:#b3261e;background:#fff5f4}.q.good{border-color:#2e7d32}.o{margin:2px 14px}.o.right{color:#1b6b2a;font-weight:bold}.o.given.wrongc{color:#b3261e;font-weight:bold}.hd{border-bottom:2px solid #14566b;margin-bottom:8px}.pg{page-break-after:always}.pg:last-child{page-break-after:auto}@media print{.noprint{display:none}body{background:#fff;max-width:none;margin:0}}</style>"
+FILES_BODY = r"""<style>
+.fl h2{margin:0 0 4px;font-size:18px}.fl .sub{color:#5d6b7a;font-size:13px;margin:0 0 12px;line-height:1.7}
+.fl .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.fl .card{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:#fff}
+.fl .card h3{margin:0 0 4px;font-size:16px}.fl .cur{font-size:13px;color:#33414f;margin:6px 0;line-height:1.8}
+.fl .cur b{font-size:15px}.fl .pill{display:inline-block;background:#eef3f6;border-radius:999px;padding:1px 10px;margin:1px 2px;font-size:12px}
+.fl .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.fl input[type=file]{font:inherit;font-size:13px;max-width:100%}
+.fl a.tpl{font-size:13px;color:#14566b}
+.fl .lock{background:#fff4d6;border:1px solid #ecd48a;border-radius:8px;padding:8px 12px;font-size:13px;margin:0 0 12px}
+.fl .err{color:#b3261e;font-size:13px;margin:8px 0;white-space:pre-wrap;line-height:1.7;background:#fdeceb;border-radius:8px;padding:8px 12px}
+.fl .okm{color:#1b7f46;font-size:13px;margin:8px 0;line-height:1.8;background:#eaf6ee;border-radius:8px;padding:8px 12px}
+.fl .wm{color:#8a5a00;font-size:12px;margin-top:4px}
+.fl button:disabled{opacity:.5;cursor:not-allowed}
+</style>
+<div class="fl" id="fl"><p class="sub">جاري التحميل…</p></div>
+<script>
+(function(){
+const root=document.getElementById('fl');let S=null;const msgs={questions:'',students:'',images:''};
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function load(){
+  try{const r=await fetch('/files.json',{cache:'no-store'});if(r.status!==200)throw 0;S=await r.json()}catch(e){root.innerHTML='<p class="err">تعذّر تحميل الصفحة. افتحها من جهاز السيرفر (localhost).</p>';return}
+  render()}
+function pills(o){return Object.entries(o).map(([k,v])=>'<span class="pill">'+esc(k)+': '+v+'</span>').join('')}
+function fileLine(f){return f?'<div>الملف الحالي: <b>'+esc(f.name)+'</b> ('+f.kb+' KB، '+esc(f.time)+')</div>':'<div>ما في ملف حالياً</div>'}
+function render(){
+  const q=S.questions,st=S.students,im=S.images,lock=S.started;
+  const cols=Object.entries(q.columns||{}).map(([c,vs])=>'<div>'+esc(c)+': '+vs.map(x=>'<span class="pill">'+esc(x[0])+' '+x[1]+'</span>').join('')+'</div>').join('');
+  root.innerHTML='<h2>الملفات: الأسئلة والطلاب والصور</h2><p class="sub">ارفع ملفاتك من هون، وما بتحتاج تفتح مجلد النظام. كل ملف بينفحص مقابل <b>القالب الأصلي</b> قبل ما ينحفظ، ولو فيه خطأ ما بيتغير شي وبتشوف الأخطاء سطر سطر. أي تعديل بعدين بتعمله بملف Excel وبترفعه من جديد (بنحتفظ بنسخة من القديم).</p>'
+  +(lock?'<div class="lock">الامتحان بدأ: <b>الأسئلة والصور مقفلة</b> (الأوراق انسحبت منها). بتقدر بس تضيف طلاب جدد. لأسئلة جديدة ابدأ امتحاناً جديداً من شاشة المراقبة.</div>':'')
+  +'<div class="cards">'
+  +'<div class="card"><h3>1) ملف الأسئلة</h3><div class="cur"><b>'+q.count+'</b> سؤال'+(q.picked?' | الورقة: '+q.picked+' سؤال':'')+(q.images_used?' | '+q.images_used+' صورة مستعملة':'')+'<div>'+pills(q.levels)+'</div>'+cols+fileLine(q.file)+'</div>'
+  +'<a class="tpl" href="/template/questions.xlsx">تنزيل قالب الأسئلة</a>'
+  +'<div class="row"><input type="file" id="fq" accept=".xlsx"'+(lock?' disabled':'')+'><button class="btn" id="bq"'+(lock?' disabled':'')+'>تحقق وارفع</button></div><div id="mq">'+msgs.questions+'</div>'
+  +'<div class="wm">حد الحجم '+S.limits.questions+' MB. ارفع الصور (الخانة 3) <b>قبل</b> الأسئلة لو الأسئلة فيها [img:اسم.png].</div></div>'
+  +'<div class="card"><h3>2) ملف الطلاب</h3><div class="cur"><b>'+st.count+'</b> طالب<div>'+st.sections.map(x=>'<span class="pill">'+esc(x[0])+' '+esc(x[1])+': '+x[2]+'</span>').join('')+'</div>'+fileLine(st.file)+'</div>'
+  +'<a class="tpl" href="/template/students.xlsx">تنزيل قالب الطلاب</a>'
+  +'<div class="row"><input type="file" id="fs" accept=".xlsx"><button class="btn" id="bs">تحقق وارفع</button></div><div id="ms">'+msgs.students+'</div>'
+  +'<div class="wm">حد الحجم '+S.limits.students+' MB.'+(lock?' بعد بدء الامتحان بتقدر بس تضيف أسماء.':'')+'</div></div>'
+  +'<div class="card"><h3>3) الصور</h3><div class="cur"><b>'+im.count+'</b> صورة بالمجلد'+(im.unused.length?'<div class="wm">غير مستعملة بالأسئلة: '+im.unused.slice(0,12).map(esc).join('، ')+(im.unused.length>12?' …':'')+'</div>':'')+'</div>'
+  +'<div class="row"><input type="file" id="fi" accept=".zip,.png,.jpg,.jpeg,.gif,.webp,.svg" multiple'+(lock?' disabled':'')+'><button class="btn" id="bi"'+(lock?' disabled':'')+'>تحقق وارفع</button></div><div id="mi">'+msgs.images+'</div>'
+  +'<div class="wm">ملف zip فيه الصور، أو صور مفردة (png, jpg, gif, webp, svg). حد الـ zip '+S.limits.images_zip+' MB والصورة '+S.limits.image+' MB. اسم الصورة هو اللي بتكتبه بالسؤال: [img:اسم.png].</div></div>'
+  +'</div>';
+  document.getElementById('bq').onclick=()=>up('questions','fq','mq',false);
+  document.getElementById('bs').onclick=()=>up('students','fs','ms',false);
+  document.getElementById('bi').onclick=()=>up('images','fi','mi',true)}
+async function send(kind,name,file){
+  let r;try{r=await fetch('/upload?kind='+kind+'&name='+encodeURIComponent(name),{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Exam-Action':'1'},body:file})}catch(e){return {ok:false,error:'انقطع الاتصال بالسيرفر'}}
+  try{return await r.json()}catch(e){return {ok:false,error:r.status===403?'غير مسموح: افتح الصفحة من جهاز السيرفر وسجّل دخول المعلم':'ردّ غير متوقع من السيرفر ('+r.status+')'}}}
+function okq(r){return 'تم رفع الأسئلة: <b>'+r.count+'</b> سؤال'+(r.picked?'، والورقة '+r.picked+' سؤال':'')+(r.images_used?'، '+r.images_used+' صورة مستعملة':'')+'.<div>'+pills(r.levels)+'</div>'+Object.entries(r.columns||{}).map(([c,vs])=>'<div>'+esc(c)+': '+vs.map(x=>'<span class="pill">'+esc(x[0])+' '+x[1]+'</span>').join('')+'</div>').join('')+(r.warnings||[]).map(w=>'<div class="wm">'+esc(w)+'</div>').join('')}
+function oks(r){return 'تم رفع الطلاب: <b>'+r.count+'</b> طالب'+(r.added||r.removed?' (أضفت '+r.added+'، وشلت '+r.removed+')':'')+'.<div>'+r.sections.map(x=>'<span class="pill">'+esc(x[0])+' '+esc(x[1])+': '+x[2]+'</span>').join('')+'</div>'}
+async function up(kind,inp,box,multi){
+  const el=document.getElementById(inp),fs=[...el.files];const m=document.getElementById(box);
+  if(!fs.length){m.innerHTML='<div class="err">اختر ملفاً أولاً</div>';return}
+  const btn=m.parentElement.querySelector('button');btn.disabled=true;m.innerHTML='<div class="sub">جاري الفحص والرفع…</div>';
+  let html='';
+  if(!multi){const r=await send(kind,fs[0].name,fs[0]);html=r.ok?'<div class="okm">'+(kind==='questions'?okq(r):oks(r))+'</div>':'<div class="err">'+esc(r.error||'فشل الرفع')+'</div>'}
+  else if(fs.length===1&&/\.zip$/i.test(fs[0].name)){const r=await send('images_zip',fs[0].name,fs[0]);html=r.ok?'<div class="okm">تم: أضفت '+r.added+' صورة، واستبدلت '+r.replaced+(r.ignored?'، وتجاهلت '+r.ignored+' ملف مش صورة':'')+'.</div>':'<div class="err">'+esc(r.error||'فشل الرفع')+'</div>'}
+  else{let ok=0,rep=0,errs=[];for(const f of fs){const r=await send('image',f.name,f);if(r.ok){ok++;if(r.replaced)rep++}else errs.push(r.error||('فشل رفع '+f.name))}
+    html=(ok?'<div class="okm">تم رفع '+ok+' صورة'+(rep?' (منها '+rep+' استبدلت صورة بنفس الاسم)':'')+'.</div>':'')+(errs.length?'<div class="err">'+errs.map(esc).join('\n')+'</div>':'')}
+  msgs[kind==='students'?'students':kind==='questions'?'questions':'images']=html;await load()}
+load()})();
+</script>
+"""
 SETTINGS_BODY = r"""<style>
 .st h2{margin:0 0 4px;font-size:18px}.st .sub{color:#5d6b7a;font-size:13px;margin:0 0 10px}
 .st .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
@@ -600,6 +664,8 @@ def build_preview(ctx):
     return t.replace("</script>\n</body>", auto + "</script>\n</body>", 1)
 def settings_page(ctx):
     return teacher_page(ctx, SETTINGS_BODY, "settings", "إعدادات الامتحان")
+def files_page(ctx):
+    return teacher_page(ctx, FILES_BODY, "files", "الملفات")
 def build_page(ctx):
     cfg, qs, ros = ctx.SET, ctx.QLIST, ctx.ROSTER
     lv = Counter(q["level"] for q in qs); given = cfg.get("given", set(cfg))

@@ -5,8 +5,8 @@ from .constants import MAX_BODY, GRACE
 from .questions import IMG_EXT
 from .util import DataError, norm_pass, num
 from .constants import PROTECTED
-from .views import REHEARSAL_PAGE
-from . import admin, auth, domain, rehearsal, storage
+from .views import REHEARSAL_PAGE, files_page
+from . import admin, auth, domain, rehearsal, storage, uploads
 
 
 def make_handler(ctx, app):
@@ -43,7 +43,7 @@ def make_handler(ctx, app):
             "/login": "get_login",
             "/authcheck": "get_authcheck",
             "/logout": "get_logout"}
-        TEACHER_GET = ('/monitor', '/monitor-old', '/monitor.json', '/admin', '/report', '/report.xlsx', '/sheet', '/key', '/codes', '/teacher', '/settings', '/settings.json')
+        TEACHER_GET = ('/monitor', '/monitor-old', '/monitor.json', '/admin', '/report', '/report.xlsx', '/sheet', '/key', '/codes', '/teacher', '/settings', '/settings.json', '/files', '/files.json', '/template/questions.xlsx', '/template/students.xlsx')
         def do_GET(self):
             u = urllib.parse.urlparse(self.path); q = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}; path = u.path
             app.note_client(self)
@@ -118,6 +118,11 @@ def make_handler(ctx, app):
                     return self.send(json.dumps({"sections": secs, "closed": bool(ctx.STATE["closed_at"]), "msg": ctx.STATE["msg"]["text"], "comp": ctx.STATE.get("comp"), "bank_changed": app.bank_changed(), "reh": rehearsal.reh_summary(ctx), "c": {k: c.get(k, 0) for k in ("done", "live", "lost", "none")}}, ensure_ascii=False), "application/json; charset=utf-8")
                 if path == "/settings": return self.send(app.settings_page(), "text/html; charset=utf-8", extra={"Cache-Control": "no-store"})
                 if path == "/settings.json": return self.send(json.dumps(admin.settings_state(ctx), ensure_ascii=False), "application/json; charset=utf-8", extra={"Cache-Control": "no-store"})
+                if path == "/files": return self.send(files_page(ctx), "text/html; charset=utf-8", extra={"Cache-Control": "no-store"})
+                if path == "/files.json": return self.send(json.dumps(uploads.files_state(ctx), ensure_ascii=False), "application/json; charset=utf-8", extra={"Cache-Control": "no-store"})
+                if path.startswith("/template/"):
+                    kind = path[len("/template/"):-len(".xlsx")]
+                    return self.send(uploads.template_bytes(ctx, kind), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", extra={"Content-Disposition": f"attachment; filename={kind}_template.xlsx"})
                 if path == "/key": return self.send(app.key_page(), "text/html; charset=utf-8")
                 if path == "/teacher": return self.send(ctx.PREVIEW, "text/html; charset=utf-8")
                 if path == "/codes": return self.send(app.codes_page(), "text/html; charset=utf-8")
@@ -139,6 +144,7 @@ def make_handler(ctx, app):
         def do_POST(self):
             app.note_client(self)
             app.gap_check()
+            if urllib.parse.urlparse(self.path).path == "/upload": return self.post_upload()
             try: n = int(self.headers["Content-Length"])
             except Exception: return self.send("bad", code=400)
             if n < 0: return self.send("bad", code=400)
@@ -168,6 +174,25 @@ def make_handler(ctx, app):
             if ctx.SET["tpass"] and not self.authed(): return self.send("للمعلم فقط", code=403)
             with ctx.LOCK:
                 try: return J(admin.apply_settings(ctx, d))
+                except DataError as e: return J({"ok": False, "error": str(e)}, 400)
+                except OSError as e: return J({"ok": False, "error": f"تعذّرت كتابة الملف: {e}"}, 500)
+        def post_upload(self):
+            """رفع ملف (أسئلة/طلاب/صورة/zip صور): الجسم هو الملف نفسه (مش JSON)، والنوع والاسم بالرابط. حد حجم لكل نوع"""
+            if not self.teacher() or self.headers.get("X-Exam-Action") != "1": return self.send("للمعلم فقط", code=403)
+            auth.refresh_tpass(ctx)
+            if ctx.SET["tpass"] and not self.authed(): return self.send("للمعلم فقط", code=403)
+            J = lambda o, code=200: self.send(json.dumps(o, ensure_ascii=False), "application/json; charset=utf-8", code)
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query); kind, name = q.get("kind", [""])[0], q.get("name", [""])[0]
+            lim = uploads.LIMITS.get(kind)
+            if lim is None: return J({"ok": False, "error": "نوع الرفع غير معروف"}, 400)
+            try: n = int(self.headers["Content-Length"])
+            except Exception: return J({"ok": False, "error": "طلب غير صالح"}, 400)
+            if n <= 0: return J({"ok": False, "error": "الملف فاضي"}, 400)
+            if n > lim: self.close_connection = True; return J({"ok": False, "error": f"حجم الملف أكبر من المسموح ({lim // 1048576} MB)"}, 413)
+            data = self.rfile.read(n)
+            if len(data) != n: return J({"ok": False, "error": "الرفع انقطع قبل ما يكتمل، جرّب من جديد"}, 400)
+            with ctx.LOCK:
+                try: return J({"ok": True, **uploads.handle_upload(ctx, kind, name, data)})
                 except DataError as e: return J({"ok": False, "error": str(e)}, 400)
                 except OSError as e: return J({"ok": False, "error": f"تعذّرت كتابة الملف: {e}"}, 500)
         def post_monitor(self, d, k, dev, J):
