@@ -107,10 +107,13 @@ def reopen_student(ctx, k):
     return None
 def write_results_csv(ctx):
     """results.csv يتولّد من التسليمات. لو كان مفتوح بـ Excel نتجاوز (التسليم محفوظ بـ jsonl أصلاً)"""
+    if ctx.SETUP or ctx.STATE.get("bank_changed"): return          # وضع التجهيز أو بنك مختلف عن بنك التسليمات: البنك الحالي ما بيفسّر أخطاء الامتحان السابق، فنترك results.csv القديم زي ما هو
     buf = io.StringIO(); w = csv.writer(buf); w.writerow(HEAD)
     for rec in ctx.SUBS.values():
+        try: wrong = wrong_text(ctx, wrong_items(ctx, rec["ids"], rec["answers"]))
+        except (KeyError, IndexError): wrong = "— تعذّر عرض الأخطاء: بنك الأسئلة تغيّر —"
         w.writerow([rec["exam"], rec["grade"], rec["section"], rec["name"], rec["score"], rec["total"],
-                    wrong_text(ctx, wrong_items(ctx, rec["ids"], rec["answers"])), rec.get("auto", ""), rec.get("time", ""), rec.get("leave", ""), rec.get("late", 0), fmt_dur(ctx, rec.get("dur"))])
+                    wrong, rec.get("auto", ""), rec.get("time", ""), rec.get("leave", ""), rec.get("late", 0), fmt_dur(ctx, rec.get("dur"))])
     try: atomic_write(ctx.OUT, "﻿" + buf.getvalue(), tries=2)          # مفتوح بـ Excel = ممسوك طول الوقت: ما نستنّى عليه مع كل تسليم
     except OSError as e: ctx.print("تنبيه: تعذّر تحديث results.csv (مفتوح بـ Excel؟) — التسليمات محفوظة بـ submissions.jsonl:", e)
 def init_codes(ctx):

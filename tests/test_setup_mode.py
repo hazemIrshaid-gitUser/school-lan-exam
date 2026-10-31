@@ -176,3 +176,32 @@ def test_the_update_folder_carries_the_same_check_files():
     p1 = PKG_SRC / "check_files.py"; p2 = next(PKG_SRC.parent.glob("2_*"), None)
     if p2 is None: pytest.skip("مجلد التحديث مش موجود (المخزن العام)")
     assert (p2 / "check_files.py").read_bytes() == p1.read_bytes()
+
+
+# ============================ نتائج امتحان قديم + ملفات شايلها المعلم ============================
+def test_old_results_do_not_crash_setup_mode_and_a_new_bank_flags_the_change(pkg):
+    pkg.settings(**{"كلمة_سر_المعلم": "secret"}); first = Server(pkg).start()
+    try:
+        k, st, p = first.start_student(); assert st == 200
+        assert first.submit(k, "dev1", p["ids"], first.correct_answers(p["ids"]))[0] == 200
+    finally: first.stop()
+    old_csv = pkg.p("results.csv").read_bytes()
+    drop(pkg, "questions.xlsx", "students.xlsx")
+    web = Server(pkg).start()                                    # قبل الإصلاح: KeyError عند كتابة results.csv ونافذة السيرفر بتسكّر
+    try:
+        assert NOT_READY in web.get("/")[2].decode("utf-8") and pkg.p("results.csv").read_bytes() == old_csv     # نتائج الامتحان القديم ما انلمست
+        ck = {**TEACHER, **cookie(web)}
+        assert up(web, "questions", qx(bank(2, 3, 3)))[1]["ok"] and up(web, "students", sx(roster(3, 2)))[1]["ok"]
+        assert web.get("/monitor", ck)[0] == 200 and web.get("/files.json", ck)[1]["setup"] == {}
+        assert pkg.p("results.csv").read_bytes() == old_csv      # بنك مختلف عن بنك التسليمات: ما بنكتب فوقها
+        assert web.get("/monitor.json", ck)[1]["bank_changed"]["subs"] == 1                  # المعلم بيشوف تنبيه «بنك مختلف» وبيبدأ امتحان جديد من المراقبة
+        assert web.teacher(newexam=True)[0] == 200 and web.get("/monitor.json", ck)[1]["bank_changed"] is None
+        assert "طالب أ1" not in pkg.p("results.csv").read_text(encoding="utf-8-sig") and any(d.name.startswith("archive_") for d in pkg.path.iterdir())
+    finally: web.stop()
+
+
+def test_results_csv_survives_submissions_from_a_different_bank(pkg):
+    m = pkg.load()
+    m.SUBS["x|y|z|w"] = {"exam": "e", "grade": "g", "section": "s", "name": "n", "score": 1, "total": 2, "ids": [999], "answers": [0]}
+    m.write_results_csv()
+    assert "تعذّر عرض الأخطاء" in pkg.p("results.csv").read_text(encoding="utf-8-sig")

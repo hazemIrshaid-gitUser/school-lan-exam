@@ -141,12 +141,15 @@ def is_missing(msg): return "غير موجود جنب" in msg
 def setup_view(ctx):
     """مشاكل وضع التجهيز للعرض: "" لو الملف لسا ما انرفع (مش خطأ)، وإلا نص الخطأ"""
     return {k: ("" if is_missing(v) else v) for k, v in ctx.SETUP.items()}
+def _locked(ctx, kind):
+    """الامتحان بدأ والملف موجود وسليم = مقفل. لو الملف نفسه ناقص أو فيه خطأ (وضع التجهيز) فالأوراق القديمة بقايا امتحان سابق، والمعلم لازم يقدر يرفع الجديد (وبعدها «بداية امتحان جديد» بتأرشفها)"""
+    return settings_started(ctx) and kind not in ctx.SETUP
 def pending(ctx):
     """الملفات اللي لسا ناقصة أو فيها خطأ (للعرض بعد الرفع)"""
     names = {"questions": "الأسئلة", "students": "الطلاب", "settings": "الإعدادات"}
     return [names[k] for k in ctx.SETUP]
 def upload_questions(ctx, data):
-    if settings_started(ctx): raise DataError(LOCK_MSG)
+    if _locked(ctx, "questions"): raise DataError(LOCK_MSG)
     path = _stage(ctx, "questions", data); snap = _snap(ctx); was_setup = bool(ctx.SETUP)
     try:
         check_questions_rows(_read(path, ("السؤال", "question")))
@@ -179,7 +182,7 @@ def upload_students(ctx, data):
             lines = str(e).split("\n")
             raise DataError("\n".join(lines[:25]) + (f"\n… و{len(lines) - 25} ملاحظة أخرى" if len(lines) > 25 else "") + "\nصحّح الملف وارفعه من جديد. ما تغيّر شي.")
         new = {(g, s, n) for g, ss in ros.items() for s, ns in ss.items() for n in ns}
-        if settings_started(ctx):                                  # الامتحان بدأ: ممنوع تنحذف أسماء طلاب عندهم ورقة أو تسليم (الإضافة مسموحة)
+        if _locked(ctx, "students"):                              # الامتحان بدأ: ممنوع تنحذف أسماء طلاب عندهم ورقة أو تسليم (الإضافة مسموحة)
             used = set()
             for k in list(ctx.PAPERS) + list(ctx.CLAIMS) + list(ctx.SUBS):
                 p = k.rsplit("|", 3) if isinstance(k, str) else []
@@ -197,13 +200,13 @@ def upload_students(ctx, data):
     if ctx.SET["needCode"]: init_codes(ctx)
     return {"pending": pending(ctx), "count": len(new), "sections": [[g, s, len(ns)] for g, ss in ros.items() for s, ns in ss.items()], "added": len(new - old), "removed": len(old - new)}
 def upload_image(ctx, name, data):
-    if settings_started(ctx): raise DataError(LOCK_MSG)
+    if _locked(ctx, "questions"): raise DataError(LOCK_MSG)
     base = check_image(name, data); os.makedirs(ctx.IMG_DIR, exist_ok=True); path = os.path.join(ctx.IMG_DIR, base); replaced = os.path.exists(path)
     try: atomic_write_bytes(path, data)
     except OSError as e: raise DataError(f"تعذّر حفظ الصورة «{base}»: {e}")
     return {"name": base, "replaced": replaced}
 def upload_images_zip(ctx, data):
-    if settings_started(ctx): raise DataError(LOCK_MSG)
+    if _locked(ctx, "questions"): raise DataError(LOCK_MSG)
     try: z = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile: raise DataError("ملف الصور تالف أو مش zip صحيح")
     infos = [i for i in z.infolist() if not i.is_dir()]
@@ -241,7 +244,7 @@ def _fileinfo(ctx, stem):
 def files_state(ctx):
     """حالة صفحة «الملفات»: الأسئلة والطلاب والصور الحالية والأقفال"""
     names, cols, _ = settings_columns(ctx); imgs = _img_files(ctx)
-    return {"started": settings_started(ctx), "setup": setup_view(ctx), "limits": {k: v // MB for k, v in LIMITS.items()},
+    return {"started": _locked(ctx, "questions"), "setup": setup_view(ctx), "limits": {k: v // MB for k, v in LIMITS.items()},
             "questions": {"count": len(ctx.QLIST), "levels": _levels(ctx), "columns": {c: cols[c] for c in _shown(names)}, "images_used": len(ctx.IMG_LIST), "picked": sum(ctx.PICK.values()), "file": _fileinfo(ctx, "questions")},
             "students": {"count": sum(len(ns) for ss in ctx.ROSTER.values() for ns in ss.values()), "sections": [[g, s, len(ns)] for g, ss in ctx.ROSTER.items() for s, ns in ss.items()], "file": _fileinfo(ctx, "students")},
             "images": {"count": len(imgs), "unused": [f for f in imgs if f not in ctx.IMG_LIST]}}
