@@ -190,6 +190,7 @@ if STATE.get("auto_title") != (SET["title"] if SET.get("auto_title") else None):
     else: STATE.pop("auto_title", None)                # عنوان مكتوب بالإعدادات: ما نخلّي عنوان تلقائي قديم يرجع بعدين
     try: atomic_write(ctx.STATE_FILE, json.dumps(STATE, ensure_ascii=False))
     except OSError: pass
+core_admin.refresh_config(ctx)                       # إعدادات الامتحان الأساسية لسا ما انعبّت؟ صفحة الطالب بتضل «غير جاهز» لحد ما المعلم يحفظها من /settings (بعد ما ينقرأ state.json: علامة configured، والأوراق)
 ANS.update(load_json(ctx.ANS_FILE, {}))              # مفتاح الطالب -> {رقم السؤال: رقم الخيار}
 # (ANS_DIRTY: مرجع من ctx)
 # (LIVE: مرجع من ctx)                                   # مفتاح الطالب -> آخر نبضة من صفحة الطالب
@@ -536,6 +537,7 @@ def health_data():
     except OSError: writable = False
     sfx = "" if PORT == 80 else ":" + str(PORT)
     warns = []
+    if ctx.UNCONF: warns.append("إعدادات الامتحان لسا ما انعبّت (" + "، ".join(ctx.UNCONF) + "): الطلاب بيشوفوا «الامتحان غير جاهز». عبّيها واحفظ من صفحة /settings.")
     if ctx.SETUP: warns.append("السيرفر بوضع التجهيز: " + "، ".join({"questions": "الأسئلة", "students": "الطلاب", "settings": "الإعدادات/قواعد السحب"}[k] + (" (ما انرفع)" if not v else " (فيه خطأ)") for k, v in core_uploads.setup_view(ctx).items()) + ". افتح صفحة «الملفات» (/files) وارفع الناقص؛ الطلاب بيشوفوا «غير جاهز».")
     if main.startswith("127."): warns.append("السيرفر ما لقى عنوان شبكة (127.0.0.1): الجهاز مش متصل بواي فاي أو شبكة، فالطلاب ما رح يقدروا يفتحوا الرابط.")
     kinds = {a: ip_kind(a, main) for a in ips}
@@ -699,6 +701,10 @@ if __name__ == "__main__":
     KEEP_AWAKE[0] = keep_awake(True)            # منع النوم طول ما السيرفر شغّال
     QUICKEDIT[0] = disable_quickedit()          # وما تتجمّد النافذة السوداء بضغطة ماوس
     sfx = "" if PORT == 80 else ":" + str(PORT)
+    if ctx.UNCONF:
+        _o = _real_print if CONSOLE_NO_ARABIC else print
+        _o("  NOTE: exam settings are not filled in yet - students see \"not ready\" until you save them at http://localhost" + sfx + "/settings")
+        if not CONSOLE_NO_ARABIC: print("  تنبيه: إعدادات الامتحان لسا ما انعبّت (" + "، ".join(ctx.UNCONF) + ") — الطلاب بيشوفوا «غير جاهز» لحد ما تحفظها من /settings")
     if ctx.SETUP:
         show_setup_banner(sfx)
         try: srv.serve_forever()

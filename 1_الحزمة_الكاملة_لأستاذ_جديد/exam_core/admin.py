@@ -10,6 +10,15 @@ from .util import DataError, atomic_write, num
 from .views import build_page, build_preview
 
 def settings_started(ctx): return bool(ctx.PAPERS or ctx.CLAIMS or ctx.SUBS)
+def config_missing(ctx):
+    """الإعدادات الأساسية اللي لازم المعلم يعبّيها قبل ما يفتح الامتحان للطلاب: عنوان مكتوب (مش التلقائي) وتوزيع الأسئلة (أعداد أو قواعد سحب)"""
+    g, out = ctx.SET.get("given", set()), []
+    if "title" not in g or ctx.SET.get("auto_title"): out.append("عنوان الامتحان")
+    if not (g & {"hard", "medium", "easy", "count"} or ctx.SET.get("rules")): out.append("توزيع الأسئلة (أعداد أو قواعد سحب)")
+    return out
+def refresh_config(ctx):
+    """بتحدّث ctx.UNCONF. «معبّاة» = المعلم حفظها من الصفحة (علامة configured بـ state.json)، أو الامتحان بدأ فعلاً (ما منسكّر امتحان شغّال)"""
+    ctx.UNCONF[:] = [] if ctx.STATE.get("configured") or settings_started(ctx) else (config_missing(ctx) or ["الضغط على «حفظ الإعدادات» مرة من صفحة الإعدادات"])        # حتى لو settings.txt معبّى: لازم تتأكد من الصفحة مرة
 def _eff(ctx, f, kind):
     v, given = ctx.SET.get(f), f in ctx.SET.get("given", set())
     if kind == "bool": return "نعم" if v else "لا"
@@ -46,7 +55,7 @@ def settings_state(ctx):
                "placeholder": ctx.SET["title"] if f == "title" and ctx.SET.get("auto_title") else ""} for f, fk, kind, label, hp, free in SPEC]
     rules = [{"text": " | ".join(f"{c}{':' if o == ':' else '~'}{'/'.join(vs)}" for c, o, vs in r["conds"]) + f" | العدد:{r['n']}", "conds": [[c, o, vs] for c, o, vs in r["conds"]], "n": r["n"]} for r in ctx.SET.get("rules", [])]
     return {"fields": fields, "rules": rules, "started": settings_started(ctx), "columns": names, "values": cols, "cross": cross, "bank": len(ctx.QLIST),
-            "picked": sum(ctx.PICK.values()), "tpass_default": ctx.SET.get("tpass") == "1234"}
+            "picked": sum(ctx.PICK.values()), "tpass_default": ctx.SET.get("tpass") == "1234", "unconf": list(ctx.UNCONF)}
 def apply_settings(ctx, d):
     """يكتب الإعدادات الجديدة بـ settings.txt (بعد ما يجرّبها كلها: لو في خطأ ما بيتغير شي) ويطبّقها فوراً. بعد ما يبدأ أول طالب بتنقفل الإعدادات اللي بتأثر على الأوراق. لازم تتنادى داخل LOCK"""
     old_txt = decode_settings(open(os.path.join(ctx.BASE, "settings.txt"), "rb").read()) if os.path.exists(os.path.join(ctx.BASE, "settings.txt")) else ""
@@ -100,6 +109,8 @@ def apply_settings(ctx, d):
         else: ctx.STATE.pop("auto_title", None)
         save_state(ctx)
     if ctx.SET["needCode"]: init_codes(ctx)
+    if not ctx.STATE.get("configured") and not config_missing(ctx): ctx.STATE["configured"] = True; save_state(ctx)          # حفظ من الصفحة والأساسيات معبّاة: الامتحان بينفتح للطلاب
+    refresh_config(ctx)
     if set(ctx.SETUP) == {"settings"}:                   # وضع التجهيز كان بسبب قواعد السحب بس، وهلأ انصلحت: الامتحان صار جاهز (الصفحة والمعاينة انبنوا فوق)
         ctx.SETUP.clear(); ctx.BANK_FP = bank_fp(ctx); check_bank_change(ctx); save_state(ctx)
     return {"ok": True, "picked": sum(ctx.PICK.values())}

@@ -167,6 +167,7 @@ def test_new_teacher_full_exam_day(browser, phone, tmp_path):
     shutil.copytree(PKG_SRC, home, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     shutil.copy(z, home / "exam_data.zip")
     for n in ("students.xlsx", "settings.txt"): shutil.copy(data_dir / n, home / n)          # ملفات المشرف (قائمة المختبر وإعدادات طلب الأستاذ)
+    (home / "state.json").write_text('{"closed_at": 0, "msg": {"id": 0, "text": ""}, "configured": true}', encoding="utf-8")          # الأستاذ حفظ الإعدادات من صفحة /settings مرة
 
     # ---------- 3) check_files.bat ----------
     step("4) check_files.bat")

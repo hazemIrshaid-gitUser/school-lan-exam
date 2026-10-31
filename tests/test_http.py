@@ -466,6 +466,9 @@ def test_server_survives_corrupt_state_files(pkg, web_for):
     # سطر تالف + JSON من نوع غلط + سطر مقطوع بنص (انقطاع كهرباء أثناء الكتابة)
     pkg.p("submissions.jsonl").write_text('not json\n[1,2]\n{"key": "a|b|c|d", "exam": "x", "gra', encoding="utf-8")
     w = web_for(pkg)
+    assert w.start_student()[1] == 503                         # علامة «الإعدادات انحفظت» كانت بـ state.json التالف: الطالب بيشوف «غير جاهز» لحد ما المعلم يحفظها من جديد
+    from test_uploads import cookie
+    assert w.post("/settings", {"values": {}, "rules": []}, {**TEACHER, **cookie(w)})[1]["ok"]
     assert w.start_student()[2]["status"] == "ok"
 
 

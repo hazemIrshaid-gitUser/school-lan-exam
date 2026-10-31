@@ -73,6 +73,8 @@ class Pkg:
     def settings(self, **over):
         kv = dict(DEFAULT_SETTINGS); kv.update({k: str(v) for k, v in over.items()})
         self.p("settings.txt").write_text("\n".join(f"{k} = {v}" for k, v in kv.items()) + "\n", encoding="utf-8")
+        if not self.p("state.json").exists():                         # «الإعدادات محفوظة من الصفحة» (وإلا الطالب بيشوف «غير جاهز»): اختبارات الإعدادات بتشيل state.json
+            self.p("state.json").write_text('{"closed_at": 0, "msg": {"id": 0, "text": ""}, "configured": true}', encoding="utf-8")
 
     def raw_settings(self, text):
         self.p("settings.txt").write_text(text, encoding="utf-8")

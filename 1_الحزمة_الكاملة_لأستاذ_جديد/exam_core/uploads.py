@@ -244,7 +244,7 @@ def _fileinfo(ctx, stem):
 def files_state(ctx):
     """حالة صفحة «الملفات»: الأسئلة والطلاب والصور الحالية والأقفال"""
     names, cols, _ = settings_columns(ctx); imgs = _img_files(ctx)
-    return {"started": _locked(ctx, "questions"), "setup": setup_view(ctx), "limits": {k: v // MB for k, v in LIMITS.items()},
+    return {"started": _locked(ctx, "questions"), "unconf": list(ctx.UNCONF), "setup": setup_view(ctx), "limits": {k: v // MB for k, v in LIMITS.items()},
             "questions": {"count": len(ctx.QLIST), "levels": _levels(ctx), "columns": {c: cols[c] for c in _shown(names)}, "images_used": len(ctx.IMG_LIST), "picked": sum(ctx.PICK.values()), "file": _fileinfo(ctx, "questions")},
             "students": {"count": sum(len(ns) for ss in ctx.ROSTER.values() for ns in ss.values()), "sections": [[g, s, len(ns)] for g, ss in ctx.ROSTER.items() for s, ns in ss.items()], "file": _fileinfo(ctx, "students")},
             "images": {"count": len(imgs), "unused": [f for f in imgs if f not in ctx.IMG_LIST]}}

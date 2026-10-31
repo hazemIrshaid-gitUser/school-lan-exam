@@ -5,7 +5,7 @@ from .constants import MAX_BODY, GRACE
 from .questions import IMG_EXT
 from .util import DataError, norm_pass, num
 from .constants import PROTECTED
-from .views import REHEARSAL_PAGE, files_page
+from .views import REHEARSAL_PAGE, files_page, not_ready_page
 from . import admin, auth, domain, rehearsal, storage, uploads
 
 
@@ -59,7 +59,7 @@ def make_handler(ctx, app):
             if path.startswith("/img/"): return self.get_img(path, q)
             self.send("", code=404)
         def get_index(self, path, q):
-            return self.send(ctx.PAGE, "text/html; charset=utf-8")
+            return self.send(not_ready_page(ctx) if ctx.UNCONF else ctx.PAGE, "text/html; charset=utf-8")          # الإعدادات الأساسية لسا ما انعبّت: نفس صفحة «غير جاهز»
         def get_ok(self, path, q):
             return self.send("OK\n")                       # للتجربة من جوال الطالب/المعلم: لو انفتحت بيوصل للسيرفر
         def get_rehearsal(self, path, q):
@@ -146,10 +146,12 @@ def make_handler(ctx, app):
             "/review": "post_review",
             "/ping": "post_ping",
             "/submit": "post_submit"}
+        STUDENT_POST = ("/start", "/resume", "/review", "/ping", "/submit", "/rehearsal/join", "/rehearsal/report")
         def do_POST(self):
             app.note_client(self)
             app.gap_check()
             if urllib.parse.urlparse(self.path).path == "/upload": return self.post_upload()
+            if ctx.UNCONF and self.path in self.STUDENT_POST: self.close_connection = True; return self.send(json.dumps({"ok": False, "error": "الامتحان لسا غير جاهز (إعدادات الامتحان ما انعبّت)", "notready": True}, ensure_ascii=False), "application/json; charset=utf-8", 503)
             if ctx.SETUP and not (self.path == "/login" or (self.path == "/settings" and self.setup_allows("/settings"))): self.close_connection = True; return self.send(json.dumps({"ok": False, "error": "الامتحان لسا غير جاهز (وضع التجهيز)", "notready": True}, ensure_ascii=False), "application/json; charset=utf-8", 503)
             try: n = int(self.headers["Content-Length"])
             except Exception: return self.send("bad", code=400)
