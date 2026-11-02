@@ -383,6 +383,7 @@ const CONFIG = {
   serverGrading: false,     // true = التصحيح بالسيرفر (الأجوبة الصحيحة مش بالصفحة) — بيتفعّل تلقائياً بنسخة السيرفر المحلي
   claimNames: true,         // حجز الاسم: أول ما يبدأ الطالب يختفي اسمه من القائمة على كل الأجهزة
   lockdown: true,           // منع النسخ واللصق وزر الماوس اليمين واختصارات أدوات المطوّر
+  keyLock: true,            // قفل الكيبورد كله من لحظة ظهور الأسئلة لحد التسليم
   endpoint: ""              // رابط Google Apps Script (فارغ = وضع تجريبي بدون حفظ)
 };
 /* بنك الأسئلة: صفحة الطالب بتوصلها أسئلة ورقته بس من السيرفر (/start)، ومعاينة المعلم بيعبّيها السيرفر بالبنك كامل — لا تعدّل هنا */
@@ -721,6 +722,24 @@ if(CONFIG.lockdown){
       e.preventDefault();e.stopPropagation();return false;
     }
   },true);
+}
+
+/* قفل الكيبورد كله وقت الأسئلة (الحل بالماوس/اللمس): من ظهور الأسئلة لحد التسليم. ما بيمنع كبسات ويندوز نفسه ولا لقطة الشاشة؛ بس عند PrintScreen بنمسح الكليبورد */
+function wipeClipboard(){
+  try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(' ').catch(()=>{});return}}catch(e){}
+  try{
+    const f=ev=>{ev.clipboardData.setData('text/plain',' ');ev.preventDefault()};
+    const ta=document.createElement('textarea');ta.value=' ';ta.style.cssText='position:fixed;opacity:0;left:-99px';document.body.appendChild(ta);
+    document.addEventListener('copy',f,true);ta.select();document.execCommand('copy');document.removeEventListener('copy',f,true);ta.remove()
+  }catch(e){}
+}
+if(CONFIG.keyLock){
+  ['keydown','keypress','keyup'].forEach(ev=>addEventListener(ev,e=>{
+    if(finished||$('s-exam').classList.contains('hide'))return;
+    e.preventDefault();e.stopImmediatePropagation();
+    if(ev==='keyup'&&e.key==='PrintScreen')wipeClipboard();
+    return false;
+  },true));
 }
 
 /* تسجيل الخروج من صفحة الامتحان (تاب ثاني / نافذة ثانية) */

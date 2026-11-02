@@ -651,7 +651,7 @@ def build_preview(ctx):
     pick = {k: lv.get(k, 0) for k in ("hard", "medium", "easy")}
     title = "معاينة المعلم — " + ctx.SET["title"]
     conf = ("const CONFIG = {examTitle: %s, minutes: 600, pick: %s, shuffleQuestions: false, shuffleOptions: false, showScore: true, oneAttemptPerDevice: false, "
-            "serverGrading: false, claimNames: false, lockdown: false, reviewMode: \"no\", needCode: false, teacherPreview: true, endpoint: \"\"};" %
+            "serverGrading: false, claimNames: false, lockdown: false, keyLock: false, reviewMode: \"no\", needCode: false, teacherPreview: true, endpoint: \"\"};" %
             (json.dumps(title, ensure_ascii=False).replace("</", "<\\/"), json.dumps(pick)))
     t = open(os.path.join(ctx.BASE, "template.html"), encoding="utf-8").read()
     i = t.index("const CONFIG = {"); j = t.index("};", i) + 2
@@ -720,9 +720,9 @@ def build_page(ctx):
         if abs(N * cfg["qmark"] - cfg["final"]) > 0.005:
             raise DataError(f"settings.txt: عدد أسئلة الامتحان ({N}) × علامة_السؤال ({cfg['qmark']}) = {num(N * cfg['qmark'])} لكن العلامة_النهائية {cfg['final']} — صحّح أحدهما أو اترك واحداً منهما فاضياً")
     conf = ("const CONFIG = {examTitle: %s, minutes: %d, pick: %s, shuffleQuestions: %s, shuffleOptions: %s, showScore: %s, oneAttemptPerDevice: true, "
-            "serverGrading: true, claimNames: true, lockdown: %s, reviewMode: \"%s\", needCode: %s, finalMark: %s, endpoint: \"/submit\"};" %
+            "serverGrading: true, claimNames: true, lockdown: %s, keyLock: %s, reviewMode: \"%s\", needCode: %s, finalMark: %s, endpoint: \"/submit\"};" %
             (json.dumps(cfg["title"], ensure_ascii=False), cfg["minutes"], json.dumps({"hard": 0, "medium": sum(pick.values()), "easy": 0} if rules else pick), str(cfg["shuffleQ"]).lower(),
-             str(cfg["shuffleO"]).lower(), str(cfg["showScore"]).lower(), str(cfg["lockdown"]).lower(), cfg["review"], str(cfg["needCode"]).lower(), json.dumps(cfg["final"])))
+             str(cfg["shuffleO"]).lower(), str(cfg["showScore"]).lower(), str(cfg["lockdown"]).lower(), str(cfg["keyLock"]).lower(), cfg["review"], str(cfg["needCode"]).lower(), json.dumps(cfg["final"])))
     t = open(os.path.join(ctx.BASE, "template.html"), encoding="utf-8").read()
     i = t.index("const CONFIG = {"); j = t.index("};", i) + 2
     sj = lambda o: json.dumps(o, ensure_ascii=False).replace("</", "<\\/")      # JSON آمن داخل <script>
