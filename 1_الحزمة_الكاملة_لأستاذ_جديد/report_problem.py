@@ -63,7 +63,10 @@ def masked_settings(text):
     out = []
     for line in text.splitlines():
         s = line.strip()
-        if s and not s.startswith("#") and "=" in s and s.split("=", 1)[0].strip().replace(" ", "_") == "كلمة_سر_المعلم":
+        if s and not s.startswith("#") and "=" in s and s.split("=", 1)[0].strip().replace(" ", "_") == "كلمة_مرور_البريد":
+            v = s.split("=", 1)[1].strip()
+            line = "كلمة_مرور_البريد = " + ("(فاضية)" if not v else f"*** (مخفية، {len(v)} حرف)")
+        elif s and not s.startswith("#") and "=" in s and s.split("=", 1)[0].strip().replace(" ", "_") == "كلمة_سر_المعلم":
             v = s.split("=", 1)[1].strip()
             line = "كلمة_سر_المعلم = " + ("(فاضية: ما في كلمة سر)" if not v else "1234 (الافتراضية)" if v == "1234" else f"*** (مخفية، {len(v)} حرف)")
         out.append(line)

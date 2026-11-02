@@ -170,16 +170,21 @@ function fieldHtml(f){
   let ctl;
   if(f.kind==='bool')ctl=`<select data-fk="${f.key}"${d}><option${f.value==='نعم'?' selected':''}>نعم</option><option${f.value==='لا'?' selected':''}>لا</option></select>`;
   else if(f.kind==='review')ctl=`<select data-fk="${f.key}"${d}>${['لا','نعم','بعد_الإنهاء'].map(o=>`<option${f.value===o?' selected':''}>${o}</option>`).join('')}</select>`;
+  else if(f.kind==='secret')ctl=`<input data-fk="${f.key}" type="password" autocomplete="new-password" dir="ltr" value="${esc(f.value)}" placeholder="فاضي = بدون إرسال"${d}>`;
+  else if(f.kind==='mail')ctl=`<input data-fk="${f.key}" dir="ltr" value="${esc(f.value)}"${d}>`;
   else ctl=`<input data-fk="${f.key}" value="${esc(f.value)}" placeholder="${esc(f.placeholder||(f.kind==='num'?'فاضي = غير مفعّل':''))}"${d}>`;
   return `<label>${esc(f.label)}${ctl}${h}</label>`;
 }
 function render(){
-  const general=S.fields.filter(f=>f.kind!=='count'),legacy=S.fields.filter(f=>f.kind==='count');
+  const isMail=f=>f.kind==='mail'||f.kind==='secret',general=S.fields.filter(f=>f.kind!=='count'&&!isMail(f)),mailFields=S.fields.filter(isMail);
   let h='';
   if(S.started)h+='<div class="wbox">🔒 بدأ الامتحان: الإعدادات اللي بتأثر على أوراق الطلاب مقفلة. المفتوح بس: كلمة السر وإظهار العلامة ومراجعة الأخطاء. لتعديل الباقي ابدأ امتحاناً جديداً من شاشة المراقبة.</div>';
   if(S.unconf&&S.unconf.length)h+='<div class="wbox">⏳ الامتحان لسا غير جاهز للطلاب (بيشوفوا «الامتحان غير جاهز»). عبّي: <b>'+S.unconf.map(esc).join('، ')+'</b> ثم اضغط «حفظ الإعدادات» وبينفتح الامتحان لحاله.</div>';
   if(S.tpass_default)h+='<div class="wbox">⚠ كلمة سر المعلم هي الافتراضية (1234): غيّرها من هون.</div>';
   h+=`<div class="card"><h2>الإعدادات العامة</h2><p class="sub">كل تعديل بينكتب بملف settings.txt (ونسخة احتياطية قبل كل حفظ).</p><div class="grid">${general.map(fieldHtml).join('')}</div></div>`;
+  const ms=S.mail||{};
+  h+=`<div class="card"><h2>إرسال النتائج على الإيميل</h2><p class="sub">لما تضغط «بداية امتحان جديد» وتنأرشف النتائج، بنبعت نسخة مضغوطة منها على إيميلك (يحتاج إنترنت على جهاز السيرفر). تعبئتها اختيارية.</p><div class="grid">${mailFields.map(fieldHtml).join('')}</div>`;
+  h+=`<p class="sub"><button class="btn" id="mailtest" type="button">إرسال رسالة تجريبية</button> <span id="mailst">${ms.text?esc((ms.at?ms.at+' — ':'')+ms.text):(ms.on?'مفعّل':'غير مفعّل (فاضي)')}</span></p></div>`;
   h+='<div class="card"><h2>توزيع الأسئلة</h2><p class="sub">الأعمدة والقيم والأعداد المتاحة مقروءة من ملف الأسئلة نفسه.</p>';
   const dd=S.started?' disabled':'';
   h+=`<div class="radios"><label><input type="radio" name="md" value="grid"${mode==='grid'?' checked':''}${dd}> بالجدول (حسب عمود)</label><label><input type="radio" name="md" value="level"${mode==='level'?' checked':''}${dd}> حسب المستوى فقط (بدون قواعد)</label><label><input type="radio" name="md" value="text"${mode==='text'?' checked':''}${dd}> قواعد نصية متقدمة</label></div>`;
@@ -189,7 +194,7 @@ function render(){
   root.innerHTML=h;
   root.querySelectorAll('input[name=md]').forEach(r=>r.onchange=()=>{mode=r.value;if(mode==='grid'&&!c1)c1=S.columns[0]||'';renderDist();totals()});
   root.querySelectorAll('[data-fk]').forEach(e=>e.addEventListener('input',totals));
-  $('save').onclick=save;$('reset').onclick=doReset;
+  $('save').onclick=save;$('reset').onclick=doReset;$('mailtest').onclick=mailTest;
   renderDist();
 }
 const $=id=>document.getElementById(id);
@@ -270,6 +275,13 @@ async function save(){
     window.__rt=undefined;await load();msg('تم الحفظ وتطبيق الإعدادات ✓ (أسئلة كل ورقة: '+res.j.picked+')',true)}
   catch(e){msg('تعذّر الاتصال بالسيرفر.',false)}finally{const b=$('save');if(b)b.disabled=false}
 }
+async function mailTest(){
+  const st=$('mailst'),b=$('mailtest');
+  if(mailf().some(f=>{const e=root.querySelector('[data-fk="'+f.key+'"]');return e&&e.value!==f.value})){st.textContent='احفظ الإعدادات أولاً ثم جرّب.';return}
+  b.disabled=true;st.textContent='جاري الإرسال...';
+  try{const res=await post({mailtest:1});st.textContent=(res.j&&res.j.text)||res.error}catch(e){st.textContent='تعذّر الاتصال بالسيرفر.'}finally{b.disabled=false}
+}
+const mailf=()=>S.fields.filter(f=>f.kind==='mail'||f.kind==='secret');
 async function doReset(){
   if(!confirm('رجوع كل الإعدادات للافتراضي (كلمة السر ما بتتغير)؟ بتنحفظ نسخة احتياطية قبل.'))return;
   msg('');try{const res=await post({reset:true});if(!res.ok){msg(res.error,false);return}

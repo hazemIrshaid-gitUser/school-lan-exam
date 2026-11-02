@@ -14,7 +14,7 @@ from exam_core.constants import L, LVL, HEAD, MAX_BODY, GRACE, YES, NO, LVL_IN, 
 from exam_core.util import mtxt, E, num, load_json, atomic_write, DataError, _DIG, norm_pass, norm_code, grp
 from exam_core.files import read_table, _fmt_kind, _xl_date, _pct_text, _BUILTIN_DATE_FMT
 from exam_core.ctx import Ctx
-from exam_core import uploads as core_uploads, questions as core_q, domain as core_domain, storage as core_storage, reports as core_reports, views as core_views, web as core_web, rehearsal as core_rehearsal, auth as core_auth, admin as core_admin
+from exam_core import uploads as core_uploads, questions as core_q, domain as core_domain, storage as core_storage, reports as core_reports, views as core_views, web as core_web, rehearsal as core_rehearsal, auth as core_auth, admin as core_admin, mailer as core_mailer
 from exam_core.constants import PROTECTED
 from exam_core.views import PASS_PCT, BANDS, CSS, TABS, SHEET_CSS, SETTINGS_BODY, MONITOR, REHEARSAL_PAGE
 from exam_core.questions import IMG_EXT, _IMG_TOKEN
@@ -349,6 +349,9 @@ def archive_all():
         shutil.copy2(ctx.OUT, os.path.join(d, os.path.basename(ctx.OUT)))
     try: export_results(d, keys)
     except Exception as e: print("تنبيه: تعذّر تجهيز مجلد النتائج:", repr(e))            # الأرشفة نفسها (نقل الملفات) ما لازم تفشل بسبب هاي الإضافة
+    if keys:                                     # في امتحان انأرشف: نسخة مضغوطة على الإيميل (لو الإعدادات معبّاة)، بخيط خلفي؛ فشلها ما بيأثر على الأرشفة
+        try: core_mailer.send_archive(ctx, d, len({k for k in keys if k in SUBS}))
+        except Exception as e: print("تنبيه: تعذّر بدء إرسال النتائج على الإيميل:", repr(e))
     CLAIMS.clear(); LIVE.clear(); SUBS.clear(); PAPERS.clear(); ANS.clear(); ANS_DIRTY[0] = False
     reh_reset()                                  # أي بروفة كانت شغّالة بتنتهي مع الامتحان القديم
     STATE["bank_fp"] = ctx.BANK_FP; STATE.pop("bank_changed", None)

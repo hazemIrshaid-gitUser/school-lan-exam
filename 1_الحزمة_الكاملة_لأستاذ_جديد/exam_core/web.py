@@ -6,7 +6,7 @@ from .questions import IMG_EXT
 from .util import DataError, norm_pass, num
 from .constants import PROTECTED
 from .views import REHEARSAL_PAGE, files_page, not_ready_page
-from . import admin, auth, domain, rehearsal, storage, uploads
+from . import admin, auth, domain, mailer, rehearsal, storage, uploads
 
 
 def make_handler(ctx, app):
@@ -180,6 +180,7 @@ def make_handler(ctx, app):
             if not self.teacher() or self.headers.get("X-Exam-Action") != "1": return self.send("للمعلم فقط", code=403)
             auth.refresh_tpass(ctx)
             if ctx.SET["tpass"] and not self.authed(): return self.send("للمعلم فقط", code=403)
+            if d.get("mailtest"): return J(mailer.send_test(ctx))          # رسالة تجريبية: خارج القفل (الاتصال بالإنترنت ممكن ياخذ ثواني)
             with ctx.LOCK:
                 try: return J(admin.apply_settings(ctx, d))
                 except DataError as e: return J({"ok": False, "error": str(e)}, 400)

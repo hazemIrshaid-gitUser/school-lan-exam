@@ -2,6 +2,7 @@
 import re
 from .constants import LVL, LVL_IN, YES, NO
 from .util import DataError, num
+from .mailer import HOST_RE, check_emails
 
 def decode_settings(raw):
     if raw[:2] in (bytes([255, 254]), bytes([254, 255])): return raw.decode("utf-16")      # المفكرة بخيار «Unicode» بتحفظ UTF-16 (مع BOM)
@@ -48,6 +49,10 @@ SPEC = (   # (الحقل، اسم الإعداد بالملف، النوع، ا�
     ("review", "مراجعة_الأخطاء", "review", "مراجعة الأخطاء", "لا = الطالب ما يشوف أخطاءه. نعم = بعد التسليم مباشرة (ممكن اللي خلّص يشارك الأجوبة). بعد_الإنهاء = بعد ما تضغط «إنهاء الامتحان».", True),
     ("lockdown", "منع_النسخ", "bool", "منع النسخ واللصق والزر اليمين", "ردع فقط، مش حماية مطلقة.", False),
     ("keyLock", "منع_الكيبورد", "bool", "قفل الكيبورد وقت الأسئلة", "الصفحة بتتجاهل كل كبسات الكيبورد من لحظة ظهور الأسئلة لحد التسليم (الحل بالماوس أو اللمس). ما بتمنع كبسات ويندوز نفسه (Ctrl+Alt+Del وزر ويندوز) ولا لقطة الشاشة.", False),
+    ("mailFrom", "بريد_المرسل", "mail", "إيميل المرسِل (Gmail غالباً)", "الإيميل اللي بيبعت النتائج. مع بريد المستلم وكلمة المرور: لما تضغط «بداية امتحان جديد» بنبعت نسخة مضغوطة من النتائج على إيميلك بعد الأرشفة. فاضي = بدون إرسال.", True),
+    ("mailTo", "بريد_المستلم", "mail", "إيميل المستلم", "إيميلك اللي بتوصله النتائج. أكثر من واحد: افصل بفاصلة.", True),
+    ("mailPass", "كلمة_مرور_البريد", "secret", "كلمة مرور تطبيق الإيميل", "مش كلمة مرور حسابك العادية: بـ Gmail لازم «كلمة مرور تطبيق» (بتتطلب تفعيل التحقق بخطوتين). بتنكتب بملف settings.txt كنص عادي، فلا تعطي المجلد لحدا.", True),
+    ("mailHost", "خادم_البريد", "mail", "خادم البريد", "فاضي = smtp.gmail.com. غيره فقط لو إيميلك مش Gmail (مثلاً smtp.office365.com:587).", True),
     ("needCode", "رمز_الدخول", "bool", "رمز دخول لكل طالب", "نعم = كل طالب لازم يكتب رمزه (من صفحة رموز الدخول).", False),
     ("tpass", "كلمة_سر_المعلم", "text", "كلمة سر المعلم", "بتحمي صفحات المعلم اللي فيها الإجابات. بتتغير فوراً. فاضية = بدون كلمة سر (مش مستحسن).", True),
     ("comp", "تعويض_توقف_السيرفر", "bool", "تعويض وقت توقف السيرفر", "نعم = بنزيد وقت كل طالب بدأ بنفس مدة التوقف (لحد 30 دقيقة).", False),
@@ -91,14 +96,14 @@ def _clean_setting(v):
     return v.strip()
 def default_cfg():
     return {"title": "الامتحان الإلكتروني", "minutes": 30, "hard": 3, "medium": 6, "easy": 6, "count": 15,
-           "shuffleQ": True, "shuffleO": True, "showScore": True, "lockdown": True, "keyLock": True, "review": "no", "needCode": False, "tpass": "", "qmark": None, "final": None, "comp": True}
+           "shuffleQ": True, "shuffleO": True, "showScore": True, "lockdown": True, "keyLock": True, "mailFrom": "", "mailTo": "", "mailPass": "", "mailHost": "", "review": "no", "needCode": False, "tpass": "", "qmark": None, "final": None, "comp": True}
 
 def parse_settings(txt, auto_title):
     """يحلّل نص settings.txt. auto_title: دالة بترجّع العنوان التلقائي (بتعتمد على مجلد الامتحان، فبتجي من server.py)"""
     cfg = default_cfg()
     keys = {"عنوان_الامتحان": "title", "المدة_بالدقائق": "minutes", "عدد_الأسئلة_الصعبة": "hard", "عدد_الأسئلة_المتوسطة": "medium",
             "عدد_الأسئلة_السهلة": "easy", "عدد_الأسئلة_الكلي": "count", "خلط_الأسئلة": "shuffleQ", "خلط_الخيارات": "shuffleO",
-            "إظهار_العلامة_للطالب": "showScore", "منع_النسخ": "lockdown", "منع_الكيبورد": "keyLock", "مراجعة_الأخطاء": "review", "رمز_الدخول": "needCode", "كلمة_سر_المعلم": "tpass", "علامة_السؤال": "qmark", "العلامة_النهائية": "final", "تعويض_توقف_السيرفر": "comp"}
+            "إظهار_العلامة_للطالب": "showScore", "منع_النسخ": "lockdown", "منع_الكيبورد": "keyLock", "بريد_المرسل": "mailFrom", "بريد_المستلم": "mailTo", "كلمة_مرور_البريد": "mailPass", "خادم_البريد": "mailHost", "مراجعة_الأخطاء": "review", "رمز_الدخول": "needCode", "كلمة_سر_المعلم": "tpass", "علامة_السؤال": "qmark", "العلامة_النهائية": "final", "تعويض_توقف_السيرفر": "comp"}
     REVIEW = {"لا": "no", "no": "no", "نعم": "now", "yes": "now", "بعد_الإنهاء": "after"}
     cfg["given"] = set()                                 # الإعدادات اللي انكتبت فعلاً بالملف (الباقي افتراضي)
     for ln, line in enumerate(txt.splitlines(), 1):
@@ -128,7 +133,12 @@ def parse_settings(txt, auto_title):
         elif isinstance(cfg[f], int):
             try: cfg[f] = int(v)
             except ValueError: raise DataError(f"settings.txt سطر {ln}: «{k}» لازم يكون رقم")
-        else: cfg[f] = v
+        else:
+            if f in ("mailFrom", "mailTo"):
+                try: check_emails(v)
+                except ValueError: raise DataError(f"settings.txt سطر {ln}: «{k}» مش إيميل صحيح (مثلاً name@gmail.com)، لقيت «{v}»")
+            elif f == "mailHost" and not HOST_RE.match(v): raise DataError(f"settings.txt سطر {ln}: «{k}» لازم يكون اسم خادم مثل smtp.gmail.com أو smtp.office365.com:587، لقيت «{v}»")
+            cfg[f] = v
     if "title" not in cfg["given"] or not cfg["title"].strip():
         cfg["title"] = auto_title(); cfg["auto_title"] = True
     return cfg

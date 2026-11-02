@@ -3,6 +3,7 @@ from collections import Counter
 import os
 import time
 from .domain import bank_fp, check_bank_change
+from .mailer import MASK, configured as mail_on
 from .questions import load_questions
 from .settings import COL_SKIP, REVIEW_OUT, SPEC, SPEC_BY_KEY, _clean_setting, _col_value, decode_settings, edit_settings_text, parse_rule
 from .storage import init_codes, read_settings, save_state
@@ -23,6 +24,7 @@ def _eff(ctx, f, kind):
     v, given = ctx.SET.get(f), f in ctx.SET.get("given", set())
     if kind == "bool": return "نعم" if v else "لا"
     if kind == "review": return REVIEW_OUT.get(v, "لا")
+    if kind == "secret": return MASK if v else ""
     if kind == "count": return str(v) if given else ""
     if kind == "num": return "" if v is None else str(num(v))
     if f == "title": return "" if ctx.SET.get("auto_title") else str(v)
@@ -55,12 +57,13 @@ def settings_state(ctx):
                "placeholder": ctx.SET["title"] if f == "title" and ctx.SET.get("auto_title") else ""} for f, fk, kind, label, hp, free in SPEC]
     rules = [{"text": " | ".join(f"{c}{':' if o == ':' else '~'}{'/'.join(vs)}" for c, o, vs in r["conds"]) + f" | العدد:{r['n']}", "conds": [[c, o, vs] for c, o, vs in r["conds"]], "n": r["n"]} for r in ctx.SET.get("rules", [])]
     return {"fields": fields, "rules": rules, "started": settings_started(ctx), "columns": names, "values": cols, "cross": cross, "bank": len(ctx.QLIST),
-            "picked": sum(ctx.PICK.values()), "tpass_default": ctx.SET.get("tpass") == "1234", "unconf": list(ctx.UNCONF)}
+            "picked": sum(ctx.PICK.values()), "tpass_default": ctx.SET.get("tpass") == "1234", "unconf": list(ctx.UNCONF),
+            "mail": {"on": mail_on(ctx), **ctx.MAIL}}
 def apply_settings(ctx, d):
     """يكتب الإعدادات الجديدة بـ settings.txt (بعد ما يجرّبها كلها: لو في خطأ ما بيتغير شي) ويطبّقها فوراً. بعد ما يبدأ أول طالب بتنقفل الإعدادات اللي بتأثر على الأوراق. لازم تتنادى داخل LOCK"""
     old_txt = decode_settings(open(os.path.join(ctx.BASE, "settings.txt"), "rb").read()) if os.path.exists(os.path.join(ctx.BASE, "settings.txt")) else ""
     if d.get("reset"):                                   # رجوع للافتراضي: بنشيل كل الإعدادات ما عدا كلمة السر (حتى ما تنمسح بالغلط)
-        new_txt = edit_settings_text(old_txt, {}, [], {fk for f, fk, *_ in SPEC if f != "tpass"})
+        new_txt = edit_settings_text(old_txt, {}, [], {fk for f, fk, kind, *_ in SPEC if f != "tpass" and kind not in ("mail", "secret")})
     else:
         raw, rules = d.get("values", {}), d.get("rules", [])
         if not isinstance(raw, dict) or not isinstance(rules, list): raise DataError("طلب غير صالح")
@@ -68,6 +71,7 @@ def apply_settings(ctx, d):
         for fk, v in raw.items():
             if fk not in SPEC_BY_KEY: raise DataError(f"إعداد غير معروف: {fk}")
             f, kind = SPEC_BY_KEY[fk]; v = _clean_setting(v)
+            if kind == "secret" and v == MASK: continue          # كلمة المرور ما انغيّرت (الصفحة ما بتعرضها): نبقي القديمة
             if f in given or v != _eff(ctx, f, kind): vals[fk] = v
         lines = []
         for r in rules:

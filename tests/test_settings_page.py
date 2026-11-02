@@ -83,7 +83,7 @@ def test_every_setting_of_the_file_is_on_the_page_and_nothing_else(pkg):
     block = src[src.index("    keys = {"): src.index("    REVIEW = {")]
     file_keys = set(re.findall(r'"([^"]+)": "[A-Za-z]+"', block))
     m = pkg.load()
-    assert file_keys == {fk for _, fk, *_ in m.SPEC} and len(file_keys) == 17, file_keys ^ {fk for _, fk, *_ in m.SPEC}
+    assert file_keys == {fk for _, fk, *_ in m.SPEC} and len(file_keys) == 21, file_keys ^ {fk for _, fk, *_ in m.SPEC}
 
 
 def test_state_has_every_field_with_the_current_values(web):
