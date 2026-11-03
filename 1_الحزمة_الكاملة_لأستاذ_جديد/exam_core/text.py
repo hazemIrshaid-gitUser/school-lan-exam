@@ -11,6 +11,8 @@ def autoltr(t):
         s = m.group(0); core = s.strip(" .,:;")
         if not re.search(r"[A-Za-z0-9Ͱ-Ͽ°π√∞]", core): return s
         lead = s[:len(s) - len(s.lstrip(" .,:;"))]; tail = s[len(lead) + len(core):]
+        rel = re.match(r"[=≤≥≠≈]+\s*", core)                            # «الشغل = − ΔPE»: علامة المقارنة بأول المقطع بتضل مع الجملة العربية، وإلا بتنقلب لآخر الشمال
+        if rel and rel.end() < len(core) and t[:m.start()].strip(): lead += rel.group(0); core = core[rel.end():]
         return lead + "⁦" + core + "⁩" + tail
     return _MATH_RUN.sub(fix, t)
 _PUA = "[-]"

@@ -136,3 +136,14 @@ def test_student_page_phone(pkg, phone):
         assert not page.js_errors
     finally:
         w.stop()
+
+
+def test_leading_comparison_sign_stays_with_the_arabic_words():
+    """«الشغل الكلي = − ΔPE»: علامة = بأول المقطع اللاتيني كانت تنلف معه بعزل LTR فتطلع بأقصى الشمال («= − ΔPE الشغل الكلي»).
+    هلأ بتضل مع الجملة العربية والمعزول بس «− ΔPE». معادلة كاملة (x = 5) ومقطع بأول النص ما بيتغيروا"""
+    from exam_core.text import autoltr
+    assert autoltr("الشغل الكلي = − ΔPE") == "الشغل الكلي = " + I + "− ΔPE" + P
+    assert autoltr("الشغل الكلي = ΔPE") == "الشغل الكلي = " + I + "ΔPE" + P
+    assert autoltr("قيمة x = 5 م") == "قيمة " + I + "x = 5" + P + " م"
+    assert autoltr("= ΔPE") == I + "= ΔPE" + P
+    assert autoltr("x = 5") == I + "x = 5" + P

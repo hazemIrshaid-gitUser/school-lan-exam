@@ -6,6 +6,8 @@ from .domain import fmt_dur
 from .text import noimg
 from .util import E, num
 
+BANDS = ((85, "ممتاز", "85–100%", "#1b7f46"), (75, "جيد جداً", "75–84%", "#14566b"), (65, "جيد", "65–74%", "#3b6fb6"), (50, "مقبول", "50–64%", "#d49b20"), (0, "ضعيف", "أقل من 50%", "#b3261e"))   # فئات العلامات: نفس الفئات برسم التقرير وبجدول الشعب وبملف Excel
+def band_idx(pct): return next(i for i, b in enumerate(BANDS) if pct >= b[0])
 def find_keys(ctx):
     idx = {}
     for k in list(ctx.CLAIMS) + list(ctx.SUBS):
@@ -64,7 +66,7 @@ def section_stats(ctx):
         v = d.get((g, s), [])
         res.append({"grade": g, "section": s, "students": n, "submitted": len(v),
                     "avg": round(sum(v) / len(v), 1) if v else None, "max": round(max(v)) if v else None, "min": round(min(v)) if v else None,
-                    "dist": [sum(1 for x in v if lo <= x < lo + 20 or (lo == 80 and x == 100)) for lo in (0, 20, 40, 60, 80)]})
+                    "dist": [sum(1 for x in v if band_idx(x) == i) for i in range(len(BANDS))]})
     return res
 def xlsx_bytes(ctx, sheets):
     def col(i):
@@ -81,13 +83,13 @@ def xlsx_bytes(ctx, sheets):
     zf.writestr("_rels/.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
     zf.writestr("xl/workbook.xml", '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' + "".join(f'<sheet name="{html.escape(nm)}" sheetId="{i+1}" r:id="rId{i+1}"/>' for i, (nm, _, _) in enumerate(sheets)) + "</sheets></workbook>")
     zf.writestr("xl/_rels/workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + "".join(f'<Relationship Id="rId{i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i+1}.xml"/>' for i in range(n)) + f'<Relationship Id="rId{n+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')
-    zf.writestr("xl/styles.xml", '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')
+    zf.writestr("xl/styles.xml", '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font></fonts><fills count="' + str(2 + len(BANDS)) + '"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' + "".join(f'<fill><patternFill patternType="solid"><fgColor rgb="FF{b[3][1:]}"/><bgColor indexed="64"/></patternFill></fill>' for b in BANDS) + f'</fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="{2 + len(BANDS)}"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>' + "".join(f'<xf numFmtId="0" fontId="2" fillId="{2 + i}" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" wrapText="1"/></xf>' for i in range(len(BANDS))) + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')
     for i, (nm, widths, rows) in enumerate(sheets):
         x = ['<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews><cols>']
         x += [f'<col min="{j+1}" max="{j+1}" width="{w}" customWidth="1"/>' for j, w in enumerate(widths)]
         x.append("</cols><sheetData>")
         for r, row in enumerate(rows, 1):
-            x.append(f'<row r="{r}">' + "".join(cell(f"{col(c)}{r}", v).replace("<c ", '<c s="1" ', 1) if r == 1 else cell(f"{col(c)}{r}", v) for c, v in enumerate(row)) + "</row>")
+            x.append(f'<row r="{r}">' + "".join(cell(f"{col(c)}{r}", v).replace("<c ", f'<c s="{c - 5 if nm == "ملخص" and c >= 7 else 1}" ', 1) if r == 1 else cell(f"{col(c)}{r}", v) for c, v in enumerate(row)) + "</row>")
         x.append("</sheetData></worksheet>")
         zf.writestr(f"xl/worksheets/sheet{i+1}.xml", "".join(x))
     zf.close(); return z.getvalue()
@@ -95,7 +97,7 @@ def build_xlsx(ctx):
     st = {"done": "سلّم", "live": "يمتحن", "lost": "بدأ ولم يسلّم", "none": "لم يبدأ"}
     sheets = []
     ss = section_stats(ctx)
-    sheets.append(("ملخص", [10, 10, 12, 12, 14, 12, 12], [["الصف", "الشعبة", "عدد الطلاب", "سلّموا", "المتوسط %", "الأعلى %", "الأقل %"]] + [[r["grade"], r["section"], r["students"], r["submitted"], r["avg"] if r["avg"] is not None else "", r["max"] if r["max"] is not None else "", r["min"] if r["min"] is not None else ""] for r in ss]))
+    sheets.append(("ملخص", [10, 10, 12, 12, 14, 12, 12] + [18] * len(BANDS), [["الصف", "الشعبة", "عدد الطلاب", "سلّموا", "المتوسط %", "الأعلى %", "الأقل %"] + [f"{b[1]} ({b[2].replace(chr(8211), ' إلى ')})" for b in BANDS]] + [[r["grade"], r["section"], r["students"], r["submitted"], r["avg"] if r["avg"] is not None else "", r["max"] if r["max"] is not None else "", r["min"] if r["min"] is not None else ""] + r["dist"] for r in ss]))
     rows = student_rows(ctx)
     for (g, s) in sorted({(r["grade"], r["section"]) for r in rows}):
         sh = [["م", "الاسم", "العلامة", "من", "النسبة %", "الحالة", "الخروج من الصفحة", "التأخير (ث)", "مدة الحل"]]

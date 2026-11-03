@@ -349,6 +349,22 @@ def test_reports_smoke_and_numbers(srv):
     assert os.path.exists(srv.OUT) and open(srv.OUT, encoding="utf-8-sig").read().count("\n") >= 6
 
 
+def test_section_distribution_uses_the_same_bands_as_the_chart(srv):
+    _fill_submissions(srv)
+    sec = {s["section"]: s for s in srv.section_stats()}
+    # علامات 3..7 من 8 = 37.5 / 50 / 62.5 (شعبة أ) و 75 / 87.5 (شعبة ب). الترتيب: ممتاز، جيد جداً، جيد، مقبول، ضعيف
+    assert sec["أ"]["dist"] == [0, 0, 0, 2, 1] and sec["ب"]["dist"] == [1, 1, 0, 0, 0]
+    page = srv.report_page()
+    for b in srv.BANDS: assert f"<th class=bh style='background:{b[3]}'>{b[1]}<br><small>{'<bdi dir=ltr>' + b[2] + '</bdi>' if b[2][0].isdigit() else b[2]}</small></th>" in page
+    assert "0-20" not in page
+    ws = openpyxl.load_workbook(io.BytesIO(srv.build_xlsx()))["ملخص"]
+    head = [c.value for c in ws[1]]
+    assert head[7:] == [f"{b[1]} ({b[2].replace(chr(8211), ' إلى ')})" for b in srv.BANDS]
+    by = {ws.cell(r, 2).value: [ws.cell(r, c).value for c in range(8, 13)] for r in range(2, ws.max_row + 1)}
+    assert by["أ"] == [0, 0, 0, 2, 1] and by["ب"] == [1, 1, 0, 0, 0]
+    assert ws.cell(1, 8).fill.fgColor.rgb.upper().endswith("1B7F46") and ws.cell(1, 12).fill.fgColor.rgb.upper().endswith("B3261E")
+
+
 def test_reports_with_zero_submissions(srv):
     assert all(r["status"] == "none" for r in srv.student_rows())
     assert all(s["avg"] is None for s in srv.section_stats())

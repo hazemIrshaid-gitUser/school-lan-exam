@@ -4,14 +4,13 @@ from collections import Counter
 from .constants import L, LVL
 from .domain import eff_mark, fmt_dur, glabel, key_mark, total_range
 from .questions import qhtml
-from .reports import find_keys, question_stats, section_stats, student_rows
+from .reports import BANDS, find_keys, question_stats, section_stats, student_rows
 from .text import FRAC_CSS, bdir
 from .util import E, grp, mtxt, num
 from .settings import rule_match
 from .util import DataError
 
 PASS_PCT = 50                                               # حد النجاح (% من العلامة الكاملة) للبطاقة والدائرة بصفحة التقرير
-BANDS = ((85, "ممتاز", "85–100%", "#1b7f46"), (75, "جيد جداً", "75–84%", "#14566b"), (65, "جيد", "65–74%", "#3b6fb6"), (50, "مقبول", "50–64%", "#d49b20"), (0, "ضعيف", "أقل من 50%", "#b3261e"))
 CSS = ("<meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><style>"
        ":root{--p:#14566b;--p2:#0e4355;--ink:#1c2733;--mut:#5d6b7a;--line:#dde3ea;--bg:#f4f6f8;--ok:#1b7f46;--okbg:#e6f6ec;--warn:#9a6200;--warnbg:#fff4d6;--bad:#b3261e;--badbg:#fde8e6}"
        "*{box-sizing:border-box}html{direction:rtl}body{font-family:Tahoma,'Segoe UI',Arial,sans-serif;max-width:1180px;margin:0 auto;padding:0 14px 30px;background:var(--bg);color:var(--ink);line-height:1.6}"
@@ -38,6 +37,8 @@ CSS = ("<meta charset=utf-8><meta name=viewport content='width=device-width,init
        ".hist{display:flex;align-items:flex-end;gap:10px;height:200px;padding:6px 6px 0;border-bottom:1px solid var(--line)}"
        ".hist .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%}.hist .col i{display:block;width:70%;max-width:72px;border-radius:6px 6px 0 0}.hist .col b{font-size:13px}"
        ".histlab{display:flex;gap:10px}.histlab span{flex:1;text-align:center;font-size:12px;color:var(--mut)}"
+       "th.bh{color:#fff;text-align:center;font-size:13px;line-height:1.3;-webkit-print-color-adjust:exact;print-color-adjust:exact}th.bh small{font-weight:normal;opacity:.9}td.bc{text-align:center}"
+       ".bn{display:inline-block;min-width:34px;padding:3px 8px;border-radius:8px;color:#fff;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}.bn.z{background:#e6ebf0!important;color:#9aa6b2;font-weight:normal}"
        ".badge{display:inline-block;padding:1px 9px;border-radius:99px;font-size:12px;font-weight:700}.badge.hard{background:var(--badbg);color:var(--bad)}.badge.medium{background:var(--warnbg);color:var(--warn)}.badge.easy{background:var(--okbg);color:var(--ok)}"
        ".pct{display:flex;align-items:center;gap:8px}.pct i{display:block;height:8px;border-radius:99px;background:var(--ok)}.pct i.mid{background:#d49b20}.pct i.low{background:var(--bad)}"
        "select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}[hidden]{display:none!important}"
@@ -528,6 +529,7 @@ let wl=null;async function lock(){try{wl=await navigator.wakeLock.request('scree
 lock();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')lock()});
 poll();setInterval(poll,2000);
 </script>"""
+def rng(s): return f"<bdi dir=ltr>{s}</bdi>" if s[0].isdigit() else s   # مدى رقمي (85–100%) بدون ما ينقلب بصفحة RTL
 def band_of(ctx, pct): return next(i for i, b in enumerate(BANDS) if pct >= b[0])
 def rv_block(ctx, key, pcts, n_students, hidden):
     """بلوك التقرير لمجموعة طلاب (كل الشعب أو شعبة): بطاقات الأرقام + دائرة النجاح + أعمدة توزيع العلامات. كل المجموعات بتنكتب بالصفحة (HTML جاهز) والقائمة بتبدّل بينها بدون ما تحسب شي"""
@@ -544,7 +546,7 @@ def rv_block(ctx, key, pcts, n_students, hidden):
              f"<text x=18 y=19.5 text-anchor=middle font-size=7 font-weight=700 fill='#1c2733'>{rate}%</text></svg>"
              f"<p style='text-align:center;margin:6px 0 0'><small>نجح {ok} ورسب {n - ok}</small></p>")
     bars = "".join(f"<div class=col><b>{c}</b><i style='height:{max(2, int(100 * c / mx))}%;background:{b[3]}'></i></div>" for c, b in zip(counts, BANDS))
-    labs = "".join(f"<span>{b[1]}<br><small>{b[2]}</small></span>" for b in BANDS)
+    labs = "".join(f"<span>{b[1]}<br><small>{rng(b[2])}</small></span>" for b in BANDS)
     return head + (f"<div class=charts><div class=card><h3>نسبة النجاح والرسوب</h3>{donut}</div>"
                    f"<div class=card><h3>توزيع العلامات (عدد الطلاب بكل فئة)</h3><div class=hist>{bars}</div><div class=histlab>{labs}</div></div></div></div>")
 def teacher_nav(ctx, active):
@@ -584,11 +586,10 @@ def report_page(ctx, arch_home=None):
     h = (f"<div class=pagehead><h2>تقرير الامتحان</h2><div class=noprint>{sel} {acts}</div></div>"
          + f"<p><small>{html.escape(ctx.SET['title'])}</small></p>" + blocks
          + "<script>var f=document.getElementById('secf');f.onchange=function(){document.querySelectorAll('.rv').forEach(function(b){b.hidden=b.dataset.k!==f.value})}</script>"
-         + "<h3>ملخص الشعب</h3><div class=tw><table><tr><th>الصف</th><th>الشعبة</th><th>الطلاب</th><th>سلّموا</th><th>المتوسط %</th><th>الأعلى %</th><th>الأقل %</th><th>توزيع العلامات (0-20 / 20-40 / 40-60 / 60-80 / 80-100)</th></tr>")
+         + "<h3>ملخص الشعب</h3><div class=tw><table><tr><th>الصف</th><th>الشعبة</th><th>الطلاب</th><th>سلّموا</th><th>المتوسط %</th><th>الأعلى %</th><th>الأقل %</th>" + "".join(f"<th class=bh style='background:{b[3]}'>{b[1]}<br><small>{rng(b[2])}</small></th>" for b in BANDS) + "</tr>")
     for r in sorted(ss, key=lambda r: (r["grade"], r["section"])):
-        mx = max(r["dist"]) or 1
-        bars = " ".join(f"<span class=bar style='width:{int(40*c/mx)+2}px' title={c}></span>{c}" for c in r["dist"])
-        h += f"<tr><td>{html.escape(r['grade'])}</td><td>{html.escape(r['section'])}</td><td>{r['students']}</td><td>{r['submitted']}</td><td>{'' if r['avg'] is None else r['avg']}</td><td>{'' if r['max'] is None else r['max']}</td><td>{'' if r['min'] is None else r['min']}</td><td>{bars}</td></tr>"
+        cells = "".join(f"<td class=bc><span class='bn{'' if c else ' z'}' style='background:{b[3]}'>{c}</span></td>" for c, b in zip(r["dist"], BANDS))
+        h += f"<tr><td>{html.escape(r['grade'])}</td><td>{html.escape(r['section'])}</td><td>{r['students']}</td><td>{r['submitted']}</td><td>{'' if r['avg'] is None else r['avg']}</td><td>{'' if r['max'] is None else r['max']}</td><td>{'' if r['min'] is None else r['min']}</td>{cells}</tr>"
     h += "</table></div><h3>تحليل الأسئلة (الأصعب أولاً)</h3><div class=tw><table><tr><th>السؤال</th><th>المستوى</th><th>الصفحة</th><th>مرات الظهور</th><th>نسبة الصح %</th><th>أكثر إجابة خاطئة</th><th>ملاحظة</th></tr>"
     for r in sorted(qs, key=lambda r: (r["pct"] is None, r["pct"] if r["pct"] is not None else 0)):
         pc = "" if r["pct"] is None else f"<div class=pct><span>{r['pct']}</span><i class='{'' if r['pct'] >= 70 else 'mid' if r['pct'] >= 40 else 'low'}' style='width:{max(2, round(r['pct'] * 0.8))}px'></i></div>"
