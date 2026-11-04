@@ -343,7 +343,7 @@ def archive_all():
     if ANS_DIRTY[0]:                             # آخر إجابات لسا ما انحفظت: نكتبها قبل ما ننقل الملف للأرشيف (هذه الدالة تُستدعى داخل القفل)
         try: atomic_write(ctx.ANS_FILE, json.dumps(ANS, ensure_ascii=False))
         except OSError: pass
-    for f in (ctx.SUBS_FILE, ctx.CLAIMS_FILE, ctx.PAPERS_FILE, ctx.STATE_FILE, ctx.ANS_FILE):
+    for f in (ctx.SUBS_FILE, ctx.CLAIMS_FILE, ctx.PAPERS_FILE, ctx.STATE_FILE, ctx.ANS_FILE, ctx.TIMELINE_FILE):          # السجل الزمني بينتقل مع الامتحان (ما بيتصفّر ولا بيتحذف)
         if os.path.exists(f): shutil.move(f, os.path.join(d, os.path.basename(f)))
     if os.path.exists(ctx.OUT):                      # ننسخ (مش ننقل) لأنه ممكن يكون مفتوح بـ Excel
         shutil.copy2(ctx.OUT, os.path.join(d, os.path.basename(ctx.OUT)))

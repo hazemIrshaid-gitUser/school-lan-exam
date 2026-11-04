@@ -11,7 +11,7 @@ from test_browser import browser, PNG_1PX  # noqa: F401  (fixture)
 
 BAT = "@echo off" + chr(13) + chr(10) + "python server.py" + chr(13) + chr(10)
 IMG_Q = "سؤال فيه صورة [img:p1.png] وبعدها كلام"
-DATA = {"claims.json", "papers.json", "state.json", "answers.json", "submissions.jsonl", "results.csv"}      # اللي كان يتحفظ بالأرشيف قبل
+DATA = {"claims.json", "papers.json", "state.json", "answers.json", "submissions.jsonl", "results.csv", "timeline.csv"}      # اللي بيتحفظ بالأرشيف (timeline.csv = السجل الزمني للطلاب، بيجي مع الامتحان)
 NOT_FOR_TEACHER = ("server.py", "template.html", "start.bat", "settings.txt", "questions.xlsx", "students.xlsx", "images")
 
 

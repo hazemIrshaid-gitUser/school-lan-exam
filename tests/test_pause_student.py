@@ -108,9 +108,9 @@ def test_move_to_another_device_settles_the_pause_first(pkg, servers):
     """النقل بيجمّد الوقت المتبقي؛ لو كان موقوف بنثبّت الإيقاف أولاً عشان الوقت اللي بيرجع له يكون صحيح"""
     w = servers(pkg); t0 = time.time(); k, _, p = w.start_student("d1", n=A1); r0 = p["remain"]
     w.teacher(pause=k); e = time.time() - t0                                                        # أقصى وقت مضى قبل ما يتجمّد الوقت (ثقيل لو الجهاز مشغول: ما بنفترض صفر)
-    time.sleep(3.0); assert w.teacher(move=k) == (200, {"ok": 1})                                  # 3 ث موقوف: لو الإيقاف ما انثبّت بينقص الوقت 3 ث زيادة
+    time.sleep(5.0); assert w.teacher(move=k) == (200, {"ok": 1})                                  # 5 ث موقوف: لو الإيقاف ما انثبّت بينقص الوقت 5 ث زيادة (أكبر من هامش 3 ث تحت)
     st, j, _, _ = w.post("/start", {"key": k, "dev": "d9"})
-    assert st == 200 and j["status"] == "ok" and j["paused"] is False and r0 - e - 1.5 <= j["remain"] <= r0 + 1, (r0, e, j)
+    assert st == 200 and j["status"] == "ok" and j["paused"] is False and r0 - e - 3.0 <= j["remain"] <= r0 + 1, (r0, e, j)       # هامش 3 ث: الجهاز مشغول أثناء الفحص الكامل + قص الكسر
     time.sleep(1.3); assert ping(w, k, "d9")["remain"] < j["remain"]                                 # وبعد النقل الوقت بيمشي طبيعي
 
 

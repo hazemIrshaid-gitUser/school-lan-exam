@@ -290,11 +290,14 @@ def make_handler(ctx, app):
                         if "frozen" in p: p["start"] = time.time() + p.pop("frozen") - (ctx.SET["minutes"] * 60 + p.get("extra", 0))
                         ctx.print("استئناف من جهاز جديد:", k.split("|")[-1])
                     ctx.CLAIMS[k] = dev; app.save_claims(); app.save_papers()
+                    storage.log_event(ctx, k, "بدأ" if p is None else "استئناف من جهاز جديد", 0 if p is None else len(ctx.ANS.get(k, {})), len(ctx.PAPERS[k]["ids"]), dev=dev)
                 return J(app.paper_reply(k))
         def post_resume(self, d, k, dev, J):
             with ctx.LOCK:
                 if k in ctx.SUBS: return J({"status": "done"})
-                if ctx.CLAIMS.get(k) == dev and k in ctx.PAPERS: return J(app.paper_reply(k))
+                if ctx.CLAIMS.get(k) == dev and k in ctx.PAPERS:
+                    storage.log_event(ctx, k, "إعادة تحميل الصفحة", len(ctx.ANS.get(k, {})), len(ctx.PAPERS[k]["ids"]), dev=dev)
+                    return J(app.paper_reply(k))
                 return J({"status": "none"})
         def post_review(self, d, k, dev, J):
             with ctx.LOCK:
@@ -308,8 +311,10 @@ def make_handler(ctx, app):
                 if ctx.CLAIMS.get(k) != dev or k not in ctx.PAPERS: return J({"released": True})                             # أُلغي حجزه أو نُقل لجهاز آخر: الصفحة ترجع لشاشة الدخول
                 a = app.clean_ans(k, d.get("ans"))
                 if a is not None and a != ctx.ANS.get(k, {}): ctx.ANS[k] = a; ctx.ANS_DIRTY[0] = True
+                prev = ctx.LIVE.get(k)
                 ctx.LIVE[k] = {"t": time.time(), "answered": int(d.get("answered", 0)), "total": int(d.get("total", 0)), "remain": int(d.get("remain", 0)),
                            "leaveN": int(d.get("leaveN", 0)), "leaveSec": int(d.get("leaveSec", 0))}
+                storage.log_ping(ctx, k, dev, prev, ctx.LIVE[k])
                 return J({"remain": app.remain_of(k), "msg": ctx.STATE["msg"], "paused": "paused" in ctx.PAPERS[k]})
         def post_submit(self, d, k, dev, J):
             with ctx.LOCK:
@@ -330,6 +335,7 @@ def make_handler(ctx, app):
                     ctx.print("خطأ: تعذّر حفظ التسليم", e); return self.send("save failed", code=500)
                 app.write_results_csv()
                 ctx.print("استلمت:", rec["section"], rec["name"], rec["score"], "/", rec["total"], f"(متأخر {over} ث)" if rec["late"] else "")
+                storage.log_event(ctx, k, "سلّم", sum(1 for x in answers if x >= 0), len(answers), f"{rec['auto']} | علامة {rec['score']}/{rec['total']} | مدة {extra['dur']} ث" + (f" | متأخر {over} ث" if rec["late"] else ""), dev)
             J({"score": rec["score"], "total": rec["total"]})
         def log_message(self, *a): pass
     return H

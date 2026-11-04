@@ -9,6 +9,27 @@ from .settings import decode_settings, default_cfg, parse_settings
 def save_claims(ctx): atomic_write(ctx.CLAIMS_FILE, json.dumps(ctx.CLAIMS, ensure_ascii=False, indent=1))
 def save_papers(ctx): atomic_write(ctx.PAPERS_FILE, json.dumps(ctx.PAPERS, ensure_ascii=False))
 def save_state(ctx): atomic_write(ctx.STATE_FILE, json.dumps(ctx.STATE, ensure_ascii=False))
+TL_HEAD = ["الوقت", "الشعبة", "الطالب", "الحدث", "المجاب", "من", "ملاحظة", "الجهاز"]
+def log_event(ctx, k, event, answered="", total="", note="", dev=""):
+    """سطر بالسجل الزمني (timeline.csv): لما يصير شكوى («علقت الصفحة»...) منشوف وقت كل حدث وكم سؤال كان مجاوب. فشل الكتابة ما بيوقف الامتحان"""
+    if k in ctx.REH["keys"]: return                      # أسماء بروفة الضغط ما بتدخل بسجل الامتحان الحقيقي
+    try:
+        p = k.rsplit("|", 3) if isinstance(k, str) else []
+        sec, name = (p[2], p[3]) if len(p) == 4 else ("", str(k))
+        new = not os.path.exists(ctx.TIMELINE_FILE)
+        with open(ctx.TIMELINE_FILE, "a", encoding="utf-8-sig" if new else "utf-8", newline="") as f:
+            w = csv.writer(f)
+            if new: w.writerow(TL_HEAD)
+            w.writerow([time.strftime("%H:%M:%S"), sec, name, event, answered, total, note, str(dev)[-4:]])
+    except OSError: pass
+def log_ping(ctx, k, dev, prev, now_live):
+    """نبضة الطالب (كل 8 ثواني): بنسجّل بس التغيير: عدد المجاب، الخروج من الصفحة، أو انقطاع النبضات (الصفحة علقت أو الجهاز نام)"""
+    if prev is None: log_event(ctx, k, "أول نبضة", now_live["answered"], now_live["total"], dev=dev); return
+    gap = now_live["t"] - prev["t"]
+    if gap > ctx.TL_GAP: log_event(ctx, k, "انقطاع النبضات", now_live["answered"], now_live["total"], f"{int(gap)} ث بدون اتصال", dev)
+    d = now_live["answered"] - prev["answered"]
+    if d: log_event(ctx, k, "أجاب", now_live["answered"], now_live["total"], (f"قفزة {d:+d} بين نبضتين" if abs(d) >= 4 else f"{d:+d}"), dev)
+    if now_live["leaveN"] > prev["leaveN"]: log_event(ctx, k, "خرج من الصفحة", now_live["answered"], now_live["total"], f"المجموع {now_live['leaveN']} مرة ({now_live['leaveSec']} ث)", dev)
 def beat(ctx):
     try: atomic_write(ctx.ALIVE_FILE, repr(time.time()))
     except OSError: pass
@@ -103,6 +124,7 @@ def reopen_student(ctx, k):
     try: atomic_write(ctx.ANS_FILE, json.dumps(ctx.ANS, ensure_ascii=False)); ctx.ANS_DIRTY[0] = False             # الإجابات المستعادة بتنكتب فوراً (لو وقف السيرفر الآن ما بتضيع)
     except OSError: pass
     ctx.LIVE[k] = {"t": now, "answered": len(saved), "total": len(rec["ids"]), "remain": target, "leaveN": 0, "leaveSec": 0}
+    log_event(ctx, k, "أعاد المعلم فتحه", len(saved), len(rec["ids"]), f"باقي {target // 60} دقيقة")
     save_papers(ctx); write_results_csv(ctx)
     return None
 def write_results_csv(ctx):
