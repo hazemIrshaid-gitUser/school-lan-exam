@@ -120,7 +120,10 @@ def test_submitted_for_student_and_old_records_have_no_duration(pkg, servers):
     for r in lines: r.pop("dur", None)                                                  # سجلات قبل الميزة
     pkg.p("submissions.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in lines), encoding="utf-8")
     w = servers(pkg)
-    head, rows = csv_rows(pkg)                                                          # results.csv بيتولّد من جديد عند التشغيل
+    for _ in range(100):                                                                # results.csv بيتولّد من جديد عند التشغيل: ننتظر يتبدّل الملف القديم (فيه «0 ث») بدل ما نقرأه بالسباق
+        head, rows = csv_rows(pkg)
+        if rows["طالب أ1"][-1] == "" and rows["طالب أ2"][-1] == "": break
+        time.sleep(0.1)
     assert rows["طالب أ1"][-1] == "" and rows["طالب أ2"][-1] == ""
     m = monitor_rows(w); assert m["طالب أ1"]["status"] == "done" and m["طالب أ1"]["durtxt"] == ""
     ck = cookie(w)
