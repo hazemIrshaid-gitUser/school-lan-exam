@@ -1,10 +1,10 @@
 """صفحات HTML للمعلم (تقرير، ورقات الطلاب، المفتاح، الرموز، المعاينة، الإعدادات) وتصميمها المشترك. كل دالة بتاخذ ctx."""
 import json, os, html, urllib.parse
 from collections import Counter
-from .constants import L, LVL
+from .constants import BANDS, L, LVL
 from .domain import eff_mark, fmt_dur, glabel, key_mark, total_range
 from .questions import qhtml
-from .reports import BANDS, find_keys, question_stats, section_stats, student_rows
+from .reports import find_keys, question_stats, section_stats, student_rows
 from .text import FRAC_CSS, bdir
 from .util import E, grp, mtxt, num
 from .settings import rule_match
@@ -172,7 +172,7 @@ function fieldHtml(f){
   if(f.kind==='bool')ctl=`<select data-fk="${f.key}"${d}><option${f.value==='نعم'?' selected':''}>نعم</option><option${f.value==='لا'?' selected':''}>لا</option></select>`;
   else if(f.kind==='review')ctl=`<select data-fk="${f.key}"${d}>${['لا','نعم','بعد_الإنهاء'].map(o=>`<option${f.value===o?' selected':''}>${o}</option>`).join('')}</select>`;
   else if(f.kind==='secret')ctl=`<input data-fk="${f.key}" type="password" autocomplete="new-password" dir="ltr" value="${esc(f.value)}" placeholder="فاضي = بدون إرسال"${d}>`;
-  else if(f.kind==='mail')ctl=`<input data-fk="${f.key}" dir="ltr" value="${esc(f.value)}"${d}>`;
+  else if(f.kind==='mail')ctl=`<input data-fk="${f.key}" dir="${f.key==='توقيع_البريد'?'rtl':'ltr'}" value="${esc(f.value)}"${d}>`;
   else ctl=`<input data-fk="${f.key}" value="${esc(f.value)}" placeholder="${esc(f.placeholder||(f.kind==='num'?'فاضي = غير مفعّل':''))}"${d}>`;
   return `<label>${esc(f.label)}${ctl}${h}</label>`;
 }

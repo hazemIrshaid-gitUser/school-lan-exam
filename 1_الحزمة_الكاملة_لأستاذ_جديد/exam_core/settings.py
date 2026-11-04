@@ -52,6 +52,7 @@ SPEC = (   # (الحقل، اسم الإعداد بالملف، النوع، ا�
     ("mailFrom", "بريد_المرسل", "mail", "إيميل المرسِل (Gmail غالباً)", "الإيميل اللي بيبعت النتائج. مع بريد المستلم وكلمة المرور: لما تضغط «بداية امتحان جديد» بنبعت نسخة مضغوطة من النتائج على إيميلك بعد الأرشفة. فاضي = بدون إرسال.", True),
     ("mailTo", "بريد_المستلم", "mail", "إيميل المستلم", "إيميلك اللي بتوصله النتائج. أكثر من واحد: افصل بفاصلة.", True),
     ("mailPass", "كلمة_مرور_البريد", "secret", "كلمة مرور تطبيق الإيميل", "مش كلمة مرور حسابك العادية: بـ Gmail لازم «كلمة مرور تطبيق» (بتتطلب تفعيل التحقق بخطوتين). بتنكتب بملف settings.txt كنص عادي، فلا تعطي المجلد لحدا.", True),
+    ("mailSign", "توقيع_البريد", "mail", "توقيع إيميل النتائج", "يظهر بآخر الإيميل بعد جملة الشكر (اسمك وطرق التواصل). افصل بين الأسطر بالرمز |  مثل: م. فلان | واتساب: +962... | الإيميل: name@gmail.com. فاضي = بدون توقيع.", True),
     ("mailHost", "خادم_البريد", "mail", "خادم البريد", "فاضي = smtp.gmail.com. غيره فقط لو إيميلك مش Gmail (مثلاً smtp.office365.com:587).", True),
     ("needCode", "رمز_الدخول", "bool", "رمز دخول لكل طالب", "نعم = كل طالب لازم يكتب رمزه (من صفحة رموز الدخول).", False),
     ("tpass", "كلمة_سر_المعلم", "text", "كلمة سر المعلم", "بتحمي صفحات المعلم اللي فيها الإجابات. بتتغير فوراً. فاضية = بدون كلمة سر (مش مستحسن).", True),
@@ -96,14 +97,14 @@ def _clean_setting(v):
     return v.strip()
 def default_cfg():
     return {"title": "الامتحان الإلكتروني", "minutes": 30, "hard": 3, "medium": 6, "easy": 6, "count": 15,
-           "shuffleQ": True, "shuffleO": True, "showScore": True, "lockdown": True, "keyLock": True, "mailFrom": "", "mailTo": "", "mailPass": "", "mailHost": "", "review": "no", "needCode": False, "tpass": "", "qmark": None, "final": None, "comp": True}
+           "shuffleQ": True, "shuffleO": True, "showScore": True, "lockdown": True, "keyLock": True, "mailFrom": "", "mailTo": "", "mailPass": "", "mailHost": "", "mailSign": "", "review": "no", "needCode": False, "tpass": "", "qmark": None, "final": None, "comp": True}
 
 def parse_settings(txt, auto_title):
     """يحلّل نص settings.txt. auto_title: دالة بترجّع العنوان التلقائي (بتعتمد على مجلد الامتحان، فبتجي من server.py)"""
     cfg = default_cfg()
     keys = {"عنوان_الامتحان": "title", "المدة_بالدقائق": "minutes", "عدد_الأسئلة_الصعبة": "hard", "عدد_الأسئلة_المتوسطة": "medium",
             "عدد_الأسئلة_السهلة": "easy", "عدد_الأسئلة_الكلي": "count", "خلط_الأسئلة": "shuffleQ", "خلط_الخيارات": "shuffleO",
-            "إظهار_العلامة_للطالب": "showScore", "منع_النسخ": "lockdown", "منع_الكيبورد": "keyLock", "بريد_المرسل": "mailFrom", "بريد_المستلم": "mailTo", "كلمة_مرور_البريد": "mailPass", "خادم_البريد": "mailHost", "مراجعة_الأخطاء": "review", "رمز_الدخول": "needCode", "كلمة_سر_المعلم": "tpass", "علامة_السؤال": "qmark", "العلامة_النهائية": "final", "تعويض_توقف_السيرفر": "comp"}
+            "إظهار_العلامة_للطالب": "showScore", "منع_النسخ": "lockdown", "منع_الكيبورد": "keyLock", "بريد_المرسل": "mailFrom", "بريد_المستلم": "mailTo", "كلمة_مرور_البريد": "mailPass", "خادم_البريد": "mailHost", "توقيع_البريد": "mailSign", "مراجعة_الأخطاء": "review", "رمز_الدخول": "needCode", "كلمة_سر_المعلم": "tpass", "علامة_السؤال": "qmark", "العلامة_النهائية": "final", "تعويض_توقف_السيرفر": "comp"}
     REVIEW = {"لا": "no", "no": "no", "نعم": "now", "yes": "now", "بعد_الإنهاء": "after"}
     cfg["given"] = set()                                 # الإعدادات اللي انكتبت فعلاً بالملف (الباقي افتراضي)
     for ln, line in enumerate(txt.splitlines(), 1):

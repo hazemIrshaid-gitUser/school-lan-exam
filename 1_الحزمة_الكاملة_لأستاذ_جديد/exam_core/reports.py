@@ -1,12 +1,11 @@
 """بيانات التقارير (بدون كتابة ملفات): صفوف الطلاب، تحليل الأسئلة، إحصاء الشعب، وملف Excel. كل دالة بتاخذ ctx."""
 import io, time, zipfile, html
 from collections import Counter, defaultdict
-from .constants import L, LVL
+from .constants import BANDS, L, LVL
 from .domain import fmt_dur
 from .text import noimg
 from .util import E, num
 
-BANDS = ((85, "ممتاز", "85–100%", "#1b7f46"), (75, "جيد جداً", "75–84%", "#14566b"), (65, "جيد", "65–74%", "#3b6fb6"), (50, "مقبول", "50–64%", "#d49b20"), (0, "ضعيف", "أقل من 50%", "#b3261e"))   # فئات العلامات: نفس الفئات برسم التقرير وبجدول الشعب وبملف Excel
 def band_idx(pct): return next(i for i, b in enumerate(BANDS) if pct >= b[0])
 def find_keys(ctx):
     idx = {}
@@ -93,6 +92,10 @@ def xlsx_bytes(ctx, sheets):
         x.append("</sheetData></worksheet>")
         zf.writestr(f"xl/worksheets/sheet{i+1}.xml", "".join(x))
     zf.close(); return z.getvalue()
+def summary_rows(ctx):
+    """ملخص الشعب كصفوف (نفس أول ورقة بملف Excel): الصف، الشعبة، الطلاب، سلّموا، المتوسط، الأعلى، الأقل، ثم عدد كل فئة. بيستعمله إيميل النتائج"""
+    f = lambda v: "—" if v is None else v
+    return [[r["grade"], r["section"], r["students"], r["submitted"], f(r["avg"]), f(r["max"]), f(r["min"])] + r["dist"] for r in sorted(section_stats(ctx), key=lambda r: (r["grade"], r["section"]))]
 def build_xlsx(ctx):
     st = {"done": "سلّم", "live": "يمتحن", "lost": "بدأ ولم يسلّم", "none": "لم يبدأ"}
     sheets = []

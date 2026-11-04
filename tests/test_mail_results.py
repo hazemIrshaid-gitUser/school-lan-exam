@@ -69,6 +69,47 @@ def test_archive_sends_a_zip_of_the_results_when_configured(pkg, fake):
     assert os.path.isdir(d) and "teacher@example.com" in srv.ctx.MAIL["text"]
 
 
+SIGN = "المهندس حازم عبد الوهاب إرشيد | واتساب: +962789255225 | الإيميل: teacher@example.com"
+
+
+def test_email_body_has_date_summary_thanks_and_signature(pkg, fake):
+    """النص بالفصحى: تاريخ عقد الامتحان + ملخص الشعب (نفس أعمدة أول ورقة بـ Excel) + شكر + توقيع بأسطر؛ نسخة نص عادي وHTML"""
+    pkg.settings(**MAIL, **{"توقيع_البريد": SIGN}); srv = pkg.load(); _fill_submissions(srv); srv.archive_all()
+    assert wait_mail(srv) == "ok", srv.ctx.MAIL
+    (msg,) = fake.sent
+    text_, page = msg.get_body(("plain",)).get_content(), msg.get_body(("html",)).get_content()
+    today = time.strftime("%Y-%m-%d")
+    for s in ("السلام عليكم ورحمة الله وبركاته", "(5 طالباً)", f"تاريخ عقد الامتحان: {today}", "ملخص النتائج:", "نشكر لك استخدامك نظام الامتحانات",
+              "\n".join(["المهندس حازم عبد الوهاب إرشيد", "واتساب: +962789255225", "الإيميل: teacher@example.com"])):
+        assert s in text_, s
+    assert "الصف | الشعبة | عدد الطلاب | سلّموا | المتوسط % | الأعلى % | الأقل % | ممتاز (85 إلى 100%)" in text_
+    assert text_.count(" | 0 | 0 | 0 | 2 | 1") == 1 and text_.count(" | 1 | 1 | 0 | 0 | 0") == 1          # عدد كل فئة (ممتاز..ضعيف)
+    assert "<table" in page and "ممتاز" in page and "background:#1b7f46" in page and '<bdi dir="ltr">+962789255225</bdi>' in page and "المهندس حازم" in page
+    assert msg.get_body(("plain",)) is not None and next(msg.iter_attachments()).get_filename().endswith(".zip")
+
+
+def test_email_without_signature_has_no_empty_signature_block(pkg, fake):
+    pkg.settings(**MAIL); srv = pkg.load(); _fill_submissions(srv, 2); srv.archive_all()
+    assert wait_mail(srv) == "ok"
+    text_ = fake.sent[0].get_body(("plain",)).get_content()
+    assert text_.rstrip().endswith("نشكر لك استخدامك نظام الامتحانات، ويسعدنا تواصلك معنا لأي استفسار أو ملاحظة.")
+
+
+def test_exam_date_is_the_day_the_first_student_started(pkg):
+    from exam_core import mailer
+    srv = pkg.load(); _fill_submissions(srv, 2)
+    for p in srv.PAPERS.values(): p["start"] = 1_700_000_000.0                       # 2023-11-14
+    assert mailer.exam_date(srv.ctx) == time.strftime("%Y-%m-%d", time.localtime(1_700_000_000.0))
+
+
+def test_test_message_is_formal_arabic_with_signature(pkg, fake):
+    pkg.settings(**MAIL, **{"توقيع_البريد": SIGN}); srv = pkg.load()
+    r = srv.core_mailer.send_test(srv.ctx) if hasattr(srv, "core_mailer") else __import__("exam_core.mailer", fromlist=["x"]).send_test(srv.ctx)
+    assert r["ok"], r
+    body = fake.sent[0].get_body(("plain",)).get_content()
+    assert "هذه رسالة تجريبية للتأكد من أن إعدادات إرسال النتائج" in body and "واتساب: +962789255225" in body
+
+
 def test_nothing_is_sent_without_settings_or_without_an_exam(pkg, fake):
     srv = pkg.load(); _fill_submissions(srv, 2); srv.archive_all()                  # الإعدادات فاضية
     assert fake.calls == [] and srv.ctx.MAIL["state"] == ""

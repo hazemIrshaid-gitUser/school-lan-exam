@@ -350,7 +350,10 @@ def archive_all():
     try: export_results(d, keys)
     except Exception as e: print("تنبيه: تعذّر تجهيز مجلد النتائج:", repr(e))            # الأرشفة نفسها (نقل الملفات) ما لازم تفشل بسبب هاي الإضافة
     if keys:                                     # في امتحان انأرشف: نسخة مضغوطة على الإيميل (لو الإعدادات معبّاة)، بخيط خلفي؛ فشلها ما بيأثر على الأرشفة
-        try: core_mailer.send_archive(ctx, d, len({k for k in keys if k in SUBS}))
+        try:
+            try: rows = core_reports.summary_rows(ctx)
+            except Exception: rows = []                                  # الملخص إضافة: فشله ما بيمنع إرسال النتائج
+            core_mailer.send_archive(ctx, d, len({k for k in keys if k in SUBS}), rows)
         except Exception as e: print("تنبيه: تعذّر بدء إرسال النتائج على الإيميل:", repr(e))
     CLAIMS.clear(); LIVE.clear(); SUBS.clear(); PAPERS.clear(); ANS.clear(); ANS_DIRTY[0] = False
     reh_reset()                                  # أي بروفة كانت شغّالة بتنتهي مع الامتحان القديم
