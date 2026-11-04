@@ -26,6 +26,10 @@ def test_timeline_records_start_answers_leave_and_submit(web, pkg):
     jump = next(r for r in rows if r[3] == "أجاب")
     assert "قفزة" in jump[6] and "+6" in jump[6]
     assert "يدوي" in rows[-1][6] and "علامة" in rows[-1][6] and "مدة" in rows[-1][6]
+    txt = (pkg.path / "timeline.txt").read_text(encoding="utf-8-sig").splitlines()          # النسخة النصية: سطر مقروء لكل حدث بنفس عدد أسطر الـ CSV
+    assert len(txt) == len(rows) - 1, txt
+    assert txt[0].endswith("| أ | طالب أ1 | بدأ (0 من 8) [جهاز ev1]") or "| طالب أ1 | بدأ (0 من 8)" in txt[0], txt[0]
+    assert any("أجاب (7 من 8) — قفزة +6" in l for l in txt) and "| سلّم (8 من 8)" in txt[-1]
 
 
 def test_timeline_moves_into_the_archive_and_is_not_wiped(web, pkg):
@@ -33,9 +37,11 @@ def test_timeline_moves_into_the_archive_and_is_not_wiped(web, pkg):
     web.post("/ping", {"key": k, "dev": "dev1", "ans": {str(p["ids"][0]): 1}, "answered": 1, "total": 8, "remain": 1700, "leaveN": 0, "leaveSec": 0})
     web.submit(k, "dev1", p["ids"], web.correct_answers(p["ids"]))
     before = (pkg.path / "timeline.csv").read_bytes()
+    txt_before = (pkg.path / "timeline.txt").read_bytes()
     web.teacher(newexam=True)
     arch = [d for d in os.listdir(pkg.path) if d.startswith("archive_")]
     assert arch and (pkg.path / arch[0] / "timeline.csv").read_bytes() == before        # نفس المحتوى بالضبط بالأرشيف
+    assert (pkg.path / arch[0] / "timeline.txt").read_bytes() == txt_before and not (pkg.path / "timeline.txt").exists()   # والنسخة النصية كمان
     assert not (pkg.path / "timeline.csv").exists()                                      # والامتحان الجديد بيبدأ بسجل فاضي
     k2, st, p2 = web.start_student("devZ", n="طالب أ2")
     assert st == 200

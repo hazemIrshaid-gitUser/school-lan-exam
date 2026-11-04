@@ -22,6 +22,12 @@ def log_event(ctx, k, event, answered="", total="", note="", dev=""):
             if new: w.writerow(TL_HEAD)
             w.writerow([time.strftime("%H:%M:%S"), sec, name, event, answered, total, note, str(dev)[-4:]])
     except OSError: pass
+    try:                                                 # نسخة نصية مقروءة: «21:36:12 | أ | مصطفى | أجاب (18 من 30) — +1»
+        ev = f"{event} ({answered} من {total})" if answered != "" and total != "" else event
+        line = " | ".join([time.strftime("%H:%M:%S"), sec or "-", name, ev]) + (f" — {note}" if note else "") + (f" [جهاز {str(dev)[-4:]}]" if dev else "")
+        new = not os.path.exists(ctx.TIMELINE_TXT)
+        with open(ctx.TIMELINE_TXT, "a", encoding="utf-8-sig" if new else "utf-8", newline="") as f: f.write(line + "\r\n")
+    except OSError: pass
 def log_ping(ctx, k, dev, prev, now_live):
     """نبضة الطالب (كل 8 ثواني): بنسجّل بس التغيير: عدد المجاب، الخروج من الصفحة، أو انقطاع النبضات (الصفحة علقت أو الجهاز نام)"""
     if prev is None: log_event(ctx, k, "أول نبضة", now_live["answered"], now_live["total"], dev=dev); return
